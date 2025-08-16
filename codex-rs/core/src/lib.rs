@@ -20,6 +20,10 @@ mod conversation_history;
 mod environment_context;
 pub mod error;
 pub mod exec;
+mod file_system_tools;
+mod file_system_handlers;
+#[cfg(test)]
+mod file_system_tools_tests;
 pub mod exec_env;
 mod flags;
 pub mod git_info;

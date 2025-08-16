@@ -1859,6 +1859,131 @@ async fn handle_function_call(
             )
             .await
         }
+        "file.create" => {
+            let args = match serde_json::from_str::<crate::file_system_tools::FileCreateArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match crate::file_system_handlers::handle_file_create(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+                Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                Err(e) => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: format!("Error: {e}"),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        "file.read" => {
+            let args = match serde_json::from_str::<crate::file_system_tools::FileReadArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match crate::file_system_handlers::handle_file_read(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+                Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                Err(e) => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: format!("Error: {e}"),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        "file.edit" => {
+            let args = match serde_json::from_str::<crate::file_system_tools::FileEditArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match crate::file_system_handlers::handle_file_edit(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+                Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                Err(e) => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: format!("Error: {e}"),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        "directory.create" => {
+            let args = match serde_json::from_str::<crate::file_system_tools::DirectoryCreateArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match crate::file_system_handlers::handle_directory_create(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+                Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                Err(e) => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: format!("Error: {e}"),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        "directory.list" => {
+            let args = match serde_json::from_str::<crate::file_system_tools::DirectoryListArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match crate::file_system_handlers::handle_directory_list(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+                Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                Err(e) => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: format!("Error: {e}"),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
         "apply_patch" => {
             let args = match serde_json::from_str::<ApplyPatchToolArgs>(&arguments) {
                 Ok(a) => a,

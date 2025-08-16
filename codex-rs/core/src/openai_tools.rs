@@ -44,6 +44,7 @@ pub struct ToolsConfig {
     pub shell_type: ConfigShellToolType,
     pub plan_tool: bool,
     pub apply_patch_tool: bool,
+    pub file_system_tools: bool,
 }
 
 impl ToolsConfig {
@@ -69,6 +70,7 @@ impl ToolsConfig {
             shell_type,
             plan_tool: include_plan_tool,
             apply_patch_tool: include_apply_patch_tool || model_family.uses_apply_patch_tool,
+            file_system_tools: true, // Enable file system tools by default
         }
     }
 }
@@ -541,6 +543,14 @@ pub(crate) fn get_openai_tools(
 
     if config.apply_patch_tool {
         tools.push(create_apply_patch_tool());
+    }
+
+    if config.file_system_tools {
+        tools.push(crate::file_system_tools::create_file_create_tool());
+        tools.push(crate::file_system_tools::create_file_read_tool());
+        tools.push(crate::file_system_tools::create_file_edit_tool());
+        tools.push(crate::file_system_tools::create_directory_create_tool());
+        tools.push(crate::file_system_tools::create_directory_list_tool());
     }
 
     if let Some(mcp_tools) = mcp_tools {
