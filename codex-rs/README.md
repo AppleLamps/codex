@@ -4,6 +4,8 @@ We provide Codex CLI as a standalone, native executable to ensure a zero-depende
 
 ## Installing Codex
 
+### Standard Installation
+
 Today, the easiest way to install Codex is via `npm`, though we plan to publish Codex to other package managers soon.
 
 ```shell
@@ -13,6 +15,94 @@ codex
 
 You can also download a platform-specific release directly from our [GitHub Releases](https://github.com/openai/codex/releases).
 
+### Installing from Source with xAI Grok Support
+
+This fork includes built-in support for xAI's Grok models. To install from source:
+
+```bash
+# Clone the repository with Grok support
+git clone https://github.com/AppleLamps/codex.git
+cd codex/codex-rs
+
+# Install Rust toolchain if needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+rustup component add rustfmt
+rustup component add clippy
+
+# Install globally from source
+cargo install --path cli --bin codex
+```
+
+#### Windows Installation
+
+On Windows, you'll also need Visual Studio Build Tools:
+
+```powershell
+# Install Visual Studio Build Tools
+winget install Microsoft.VisualStudio.2022.BuildTools
+
+# Then install Rust and build Codex
+# Download rustup-init.exe from https://rustup.rs/
+# Run the installer, then:
+cd codex\codex-rs
+cargo install --path cli --bin codex
+```
+
+## Using xAI Grok Models
+
+This fork includes built-in support for xAI's Grok models, including Grok-4 with 256K context window.
+
+### Setup
+
+1. **Get an xAI API key** from [xAI Console](https://console.x.ai/)
+
+2. **Set environment variables:**
+
+   **Linux/macOS:**
+   ```bash
+   export XAI_API_KEY="your_xai_api_key_here"
+   export CODEX_HOME="path/to/codex/.github/codex/home"
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   # Set temporarily for current session
+   $env:XAI_API_KEY = "your_xai_api_key_here"
+   $env:CODEX_HOME = "C:\path\to\codex\.github\codex\home"
+
+   # Set permanently
+   setx XAI_API_KEY "your_xai_api_key_here"
+   setx CODEX_HOME "C:\path\to\codex\.github\codex\home"
+   ```
+
+3. **Configure in `config.toml`:**
+
+   The configuration is already set up in `.github/codex/home/config.toml`:
+   ```toml
+   model = "grok-4"
+   model_provider = "xai"
+   approval_policy = "on-request"
+   sandbox_mode = "workspace-write"
+
+   [sandbox_workspace_write]
+   network_access = true
+   ```
+
+### Usage
+
+Once configured, simply run:
+```bash
+codex
+```
+
+The system will use Grok-4 with:
+- 256,000 token context window
+- 256,000 token max output
+- File creation and modification capabilities
+- Network access for tool calls
+- Function calling support
+
 ## What's new in the Rust CLI
 
 While we are [working to close the gap between the TypeScript and Rust implementations of Codex CLI](https://github.com/openai/codex/issues/1262), note that the Rust CLI has a number of features that the TypeScript CLI does not!
@@ -20,6 +110,37 @@ While we are [working to close the gap between the TypeScript and Rust implement
 ### Config
 
 Codex supports a rich set of configuration options. Note that the Rust CLI uses `config.toml` instead of `config.json`. See [`config.md`](./config.md) for details.
+
+#### xAI Provider Configuration
+
+This fork includes built-in xAI provider support. The xAI provider is configured as:
+
+```toml
+[model_providers.xai]
+name = "xAI"
+base_url = "https://api.x.ai/v1"
+env_key = "XAI_API_KEY"
+wire_api = "chat"
+requires_openai_auth = false
+```
+
+You can also create profiles for different configurations:
+
+```toml
+[profiles.grok4]
+model_provider = "xai"
+model = "grok-4"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[profiles.grok4_readonly]
+model_provider = "xai"
+model = "grok-4"
+approval_policy = "never"
+sandbox_mode = "read-only"
+```
+
+Then use with: `codex --profile grok4`
 
 ### Model Context Protocol Support
 

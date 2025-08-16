@@ -81,3 +81,16 @@ CHANGELOG.ignore.md
 # nix related
 .direnv
 .envrc
+
+# Runtime and cache files
+*.json
+history.json
+version.json
+rollout-*.json
+
+# Test files
+test_create_commands.rs
+
+# Rust build artifacts
+codex-rs/target/
+codex-rs/Cargo.lock

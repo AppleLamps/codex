@@ -295,6 +295,13 @@ fn new_parsed_command(
             ParsedCommand::Format { .. } => "✨ Formatting".to_string(),
             ParsedCommand::Test { cmd } => format!("🧪 {cmd}"),
             ParsedCommand::Lint { cmd, .. } => format!("🧹 {cmd}"),
+            ParsedCommand::Create { cmd, files } => {
+                if files.len() > 1 {
+                    format!("📝 {cmd} (creating {} files)", files.len())
+                } else {
+                    format!("📝 {cmd}")
+                }
+            }
             ParsedCommand::Unknown { cmd } => format!("⌨️ {cmd}"),
             ParsedCommand::Noop { cmd } => format!("🔄 {cmd}"),
         };

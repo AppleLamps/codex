@@ -33,6 +33,10 @@ pub enum ParsedCommand {
         tool: Option<String>,
         targets: Option<Vec<String>>,
     },
+    Create {
+        cmd: String,
+        files: Vec<String>,
+    },
     Noop {
         cmd: String,
     },
@@ -53,6 +57,7 @@ impl From<ParsedCommand> for codex_protocol::parse_command::ParsedCommand {
             ParsedCommand::Format { cmd, tool, targets } => P::Format { cmd, tool, targets },
             ParsedCommand::Test { cmd } => P::Test { cmd },
             ParsedCommand::Lint { cmd, tool, targets } => P::Lint { cmd, tool, targets },
+            ParsedCommand::Create { cmd, files } => P::Create { cmd, files },
             ParsedCommand::Noop { cmd } => P::Noop { cmd },
             ParsedCommand::Unknown { cmd } => P::Unknown { cmd },
         }
@@ -79,7 +84,13 @@ pub fn parse_command(command: &[String]) -> Vec<ParsedCommand> {
     let parsed = parse_command_impl(command);
     let mut deduped: Vec<ParsedCommand> = Vec::with_capacity(parsed.len());
     for cmd in parsed.into_iter() {
-        if deduped.last().is_some_and(|prev| prev == &cmd) {
+        // Don't deduplicate Create commands - each file creation is important
+        let should_skip = match (&cmd, deduped.last()) {
+            (ParsedCommand::Create { .. }, Some(ParsedCommand::Create { .. })) => false,
+            _ => deduped.last().is_some_and(|prev| prev == &cmd),
+        };
+
+        if should_skip {
             continue;
         }
         deduped.push(cmd);
@@ -1137,6 +1148,56 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_touch_multiple_files() {
+        assert_parsed(
+            &shlex_split_safe("touch index.html style.css script.js"),
+            vec![ParsedCommand::Create {
+                cmd: "touch index.html style.css script.js".to_string(),
+                files: vec!["index.html".to_string(), "style.css".to_string(), "script.js".to_string()],
+            }],
+        );
+    }
+
+    #[test]
+    fn recognizes_echo_redirect() {
+        assert_parsed(
+            &shlex_split_safe("echo 'content' > file.txt"),
+            vec![ParsedCommand::Create {
+                cmd: "echo content > file.txt".to_string(),
+                files: vec!["file.txt".to_string()],
+            }],
+        );
+    }
+
+    #[test]
+    fn recognizes_mkdir() {
+        assert_parsed(
+            &shlex_split_safe("mkdir src components utils"),
+            vec![ParsedCommand::Create {
+                cmd: "mkdir src components utils".to_string(),
+                files: vec!["src".to_string(), "components".to_string(), "utils".to_string()],
+            }],
+        );
+    }
+
+    #[test]
+    fn does_not_deduplicate_different_file_creations() {
+        assert_parsed(
+            &shlex_split_safe("touch file1.txt && touch file2.txt"),
+            vec![
+                ParsedCommand::Create {
+                    cmd: "touch file1.txt".to_string(),
+                    files: vec!["file1.txt".to_string()],
+                },
+                ParsedCommand::Create {
+                    cmd: "touch file2.txt".to_string(),
+                    files: vec!["file2.txt".to_string()],
+                },
+            ],
+        );
+    }
+
+    #[test]
     fn find_basic_name_filter() {
         assert_parsed(
             &shlex_split_safe("find . -name '*.rs'"),
@@ -1673,6 +1734,10 @@ fn parse_bash_lc_commands(original: &[String]) -> Option<Vec<ParsedCommand>> {
                                 tool,
                                 targets,
                             },
+                            ParsedCommand::Create { files, cmd, .. } => ParsedCommand::Create {
+                                cmd: cmd.clone(),
+                                files,
+                            },
                             ParsedCommand::Unknown { .. } => ParsedCommand::Unknown {
                                 cmd: script.clone(),
                             },
@@ -2060,9 +2125,69 @@ fn summarize_main_tokens(main_cmd: &[String]) -> ParsedCommand {
                 }
             }
         }
+        // File creation commands
+        Some((head, tail)) if is_file_creation_command(head, tail) => {
+            let files = extract_created_files(head, tail);
+            ParsedCommand::Create {
+                cmd: shlex_join(main_cmd),
+                files,
+            }
+        }
         // Other commands
         _ => ParsedCommand::Unknown {
             cmd: shlex_join(main_cmd),
         },
+    }
+}
+
+/// Detects if a command is creating files
+fn is_file_creation_command(head: &str, tail: &[String]) -> bool {
+    match head {
+        "touch" => true,
+        "echo" => tail.iter().any(|arg| arg.contains(">")),
+        "cat" => tail.iter().any(|arg| arg.contains(">")),
+        "tee" => true,
+        "cp" => tail.len() >= 2,
+        "mv" => tail.len() >= 2,
+        "mkdir" => true,
+        _ => false,
+    }
+}
+
+/// Extracts the list of files being created
+fn extract_created_files(head: &str, tail: &[String]) -> Vec<String> {
+    match head {
+        "touch" => tail.iter()
+            .filter(|arg| !arg.starts_with('-'))
+            .map(|s| s.clone())
+            .collect(),
+        "echo" | "cat" => {
+            // Look for > filename patterns
+            tail.windows(2)
+                .filter_map(|window| {
+                    if window[0] == ">" {
+                        Some(window[1].clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+        "tee" => tail.iter()
+            .filter(|arg| !arg.starts_with('-'))
+            .map(|s| s.clone())
+            .collect(),
+        "cp" | "mv" => {
+            if tail.len() >= 2 {
+                vec![tail[tail.len() - 1].clone()]
+            } else {
+                Vec::new()
+            }
+        }
+        "mkdir" => tail.iter()
+            .filter(|arg| !arg.starts_with('-'))
+            .map(|s| s.clone())
+            .collect(),
+        _ => Vec::new(),
     }
 }

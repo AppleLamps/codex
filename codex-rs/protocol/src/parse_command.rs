@@ -29,6 +29,10 @@ pub enum ParsedCommand {
         tool: Option<String>,
         targets: Option<Vec<String>>,
     },
+    Create {
+        cmd: String,
+        files: Vec<String>,
+    },
     Noop {
         cmd: String,
     },
