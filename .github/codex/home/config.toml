@@ -1,13 +1,12 @@
 model = "grok-4"
 model_provider = "xai"
-projects = { 'C:\Users\lucas\Desktop\testingcodex' = { trust_level = "trusted" } }
+
+[projects."${USERPROFILE}\\Desktop\\testingcodex"]
+trust_level = "trusted"
 
 # Allow file creation and modification
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 
-# Optional: allow network access in workspace-write mode
 [sandbox_workspace_write]
 network_access = true
-
-# Consider setting [mcp_servers] here!
