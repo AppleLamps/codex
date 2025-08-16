@@ -275,6 +275,23 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
                 requires_openai_auth: true,
             },
         ),
+        (
+            "xai",
+            P {
+                name: "xAI".into(),
+                base_url: Some("https://api.x.ai/v1".to_string()),
+                env_key: Some("XAI_API_KEY".to_string()),
+                env_key_instructions: None,
+                wire_api: WireApi::Chat,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                requires_openai_auth: false,
+            },
+        ),
         (BUILT_IN_OSS_MODEL_PROVIDER_ID, create_oss_provider()),
     ]
     .into_iter()
