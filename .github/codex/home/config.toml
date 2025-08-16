@@ -1,4 +1,4 @@
-model = "grok-4-0709"
+model = "grok-4"
 model_provider = "xai"
 
 # Consider setting [mcp_servers] here!

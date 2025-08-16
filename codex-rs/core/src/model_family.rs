@@ -105,9 +105,9 @@ pub fn find_family_for_model(slug: &str) -> Option<ModelFamily> {
             slug, "gpt-5",
             supports_reasoning_summaries: true,
         )
-    } else if slug.starts_with("grok-4-0709") {
+    } else if slug.starts_with("grok-4") {
         model_family!(
-            slug, "grok-4-0709",
+            slug, "grok-4",
             supports_reasoning_summaries: true,
         )
     } else {
