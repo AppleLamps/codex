@@ -66,11 +66,20 @@ Reads file content with optional line range support.
 
 ### 3. `file.edit` - Edit Files
 
-Edits files using natural language instructions with diff preview.
+Edits files using natural language instructions with diff preview. The tool actually modifies the file on disk and provides verification.
 
 **Parameters:**
 - `path` (string): Path to the file to edit
 - `instructions` (string): Natural language description of changes
+- `target_lines` (array, optional): Line range [start, end] to focus the edit on
+
+**Supported instruction formats:**
+- `"replace \"old text\" with \"new text\""` - Find and replace text
+- `"add import \"import statement\""` - Add import at top of file
+- `"add \"content\" after \"search text\""` - Insert content after a line
+- `"add \"content\" before \"search text\""` - Insert content before a line
+- `"delete \"text to remove\""` - Remove lines containing text
+- `"replace with: \"new content\""` (with target_lines) - Replace line range
 
 **Example:**
 ```json
@@ -78,7 +87,7 @@ Edits files using natural language instructions with diff preview.
   "name": "file.edit",
   "arguments": {
     "path": "src/main.rs",
-    "instructions": "Add error handling to the main function"
+    "instructions": "replace \"println!(\\\"Hello!\\\");\" with \"println!(\\\"Hello, world!\\\");\""
   }
 }
 ```
@@ -87,10 +96,10 @@ Edits files using natural language instructions with diff preview.
 ```json
 {
   "original_content": "fn main() {\n    println!(\"Hello!\");\n}",
-  "new_content": "fn main() -> Result<(), Box<dyn std::error::Error>> {\n    println!(\"Hello!\");\n    Ok(())\n}",
-  "diff": "@@ -1,3 +1,4 @@\n-fn main() {\n+fn main() -> Result<(), Box<dyn std::error::Error>> {\n     println!(\"Hello!\");\n+    Ok(())\n }",
-  "changes_summary": "Added error handling return type and Ok(()) return",
-  "message": "File edit completed successfully. Added error handling return type and Ok(()) return. Ready to apply changes or continue with next operation."
+  "new_content": "fn main() {\n    println!(\"Hello, world!\");\n}",
+  "diff": "@@ -1,3 +1,3 @@\n fn main() {\n-    println!(\"Hello!\");\n+    println!(\"Hello, world!\");\n }",
+  "changes_summary": "Lines: 3 -> 3 (+0), Additions: 1, Deletions: 1",
+  "message": "File edit completed successfully and verified. Lines: 3 -> 3 (+0), Additions: 1, Deletions: 1. File has been saved to disk."
 }
 ```
 
