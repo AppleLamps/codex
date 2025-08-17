@@ -147,13 +147,18 @@ impl ModelSelectionWidget {
             if let Ok(mut args) = self.chat_widget_args.lock() {
                 args.config.model = model.name.clone();
                 args.config.model_provider_id = model.provider_id.clone();
-                
+
+                // Update the model provider info to match the selected provider
+                if let Some(provider_info) = args.config.model_providers.get(&model.provider_id) {
+                    args.config.model_provider = provider_info.clone();
+                }
+
                 // Update the model family
                 if let Some(family) = codex_core::model_family::find_family_for_model(&model.name) {
                     args.config.model_family = family;
                 }
             }
-            
+
             self.selected_index = Some(self.highlighted_index);
         }
     }
@@ -401,6 +406,29 @@ mod tests {
         if let Ok(args) = widget.chat_widget_args.lock() {
             assert_eq!(args.config.model, "openai/gpt-5");
             assert_eq!(args.config.model_provider_id, "openrouter");
+        }
+    }
+
+    #[test]
+    fn test_openrouter_model_provider_update() {
+        let mut widget = create_test_widget();
+
+        // Find the index of the moonshotai/kimi-k2:free model (OpenRouter)
+        let kimi_index = widget.available_models.iter().position(|m| m.name == "moonshotai/kimi-k2:free").unwrap();
+
+        // Select the kimi model
+        widget.highlighted_index = kimi_index;
+        widget.handle_selection();
+
+        // Verify the config was updated correctly
+        if let Ok(args) = widget.chat_widget_args.lock() {
+            assert_eq!(args.config.model, "moonshotai/kimi-k2:free");
+            assert_eq!(args.config.model_provider_id, "openrouter");
+
+            // Most importantly, verify that the model_provider field was updated to match
+            assert_eq!(args.config.model_provider.name, "OpenRouter");
+            assert_eq!(args.config.model_provider.base_url, Some("https://openrouter.ai/api/v1".to_string()));
+            assert_eq!(args.config.model_provider.env_key, Some("OPENROUTER_API_KEY".to_string()));
         }
     }
 
