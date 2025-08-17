@@ -71,6 +71,9 @@ pub(crate) async fn handle_update_plan(
 ) -> ResponseInputItem {
     match parse_update_plan_arguments(arguments, &call_id) {
         Ok(args) => {
+            // Store the plan in the session state
+            session.set_current_plan(args.clone());
+
             let output = ResponseInputItem::FunctionCallOutput {
                 call_id,
                 output: FunctionCallOutputPayload {

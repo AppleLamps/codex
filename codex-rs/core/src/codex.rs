@@ -68,8 +68,11 @@ use crate::openai_tools::ApplyPatchToolArgs;
 use crate::openai_tools::ToolsConfig;
 use crate::openai_tools::get_openai_tools;
 use crate::parse_command::parse_command;
+use crate::plan_tool::StepStatus;
+use crate::plan_tool::UpdatePlanArgs;
 use crate::plan_tool::handle_update_plan;
-use crate::plugins::{Plugin, discover_plugins};
+use crate::plugins::Plugin;
+use crate::plugins::discover_plugins;
 use crate::project_doc::get_user_instructions;
 use crate::protocol::AgentMessageDeltaEvent;
 use crate::protocol::AgentMessageEvent;
@@ -226,6 +229,7 @@ struct State {
     pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
     pending_input: Vec<ResponseInputItem>,
     history: ConversationHistory,
+    current_plan: Option<UpdatePlanArgs>,
 }
 
 /// Context for an initialized model agent
@@ -505,15 +509,23 @@ impl Session {
             match discover_plugins(plugin_dir) {
                 Ok(plugins) => {
                     if !plugins.is_empty() {
-                        tracing::info!("Discovered {} plugin(s) from {}", plugins.len(), plugin_dir.display());
+                        tracing::info!(
+                            "Discovered {} plugin(s) from {}",
+                            plugins.len(),
+                            plugin_dir.display()
+                        );
                         for plugin in &plugins {
                             tracing::info!("  - {}: {}", plugin.name, plugin.description);
                         }
                     }
                     plugins
-                },
+                }
                 Err(e) => {
-                    tracing::error!("Failed to discover plugins from {}: {}", plugin_dir.display(), e);
+                    tracing::error!(
+                        "Failed to discover plugins from {}: {}",
+                        plugin_dir.display(),
+                        e
+                    );
                     Vec::new()
                 }
             }
@@ -522,7 +534,9 @@ impl Session {
         };
 
         // Initialize LSP manager
-        let lsp_manager = Some(crate::lsp_handlers::LspManager::new(cwd_for_managers.clone()));
+        let lsp_manager = Some(crate::lsp_handlers::LspManager::new(
+            cwd_for_managers.clone(),
+        ));
 
         // Initialize test manager
         let test_manager = Some(crate::test_handlers::TestManager::new(cwd_for_managers));
@@ -880,6 +894,59 @@ impl Session {
             let mut ret = Vec::new();
             std::mem::swap(&mut ret, &mut state.pending_input);
             ret
+        }
+    }
+
+    /// Store the current plan in the session state
+    pub fn set_current_plan(&self, plan: UpdatePlanArgs) {
+        let mut state = self.state.lock_unchecked();
+        state.current_plan = Some(plan);
+    }
+
+    /// Get the current plan from the session state
+    pub fn get_current_plan(&self) -> Option<UpdatePlanArgs> {
+        let state = self.state.lock_unchecked();
+        state.current_plan.clone()
+    }
+
+    /// Clear the current plan from the session state
+    pub fn clear_current_plan(&self) {
+        let mut state = self.state.lock_unchecked();
+        state.current_plan = None;
+    }
+
+    /// Update the status of a specific plan item by index
+    pub fn update_plan_item_status(&self, index: usize, new_status: StepStatus) {
+        let mut state = self.state.lock_unchecked();
+        if let Some(ref mut plan) = state.current_plan {
+            if let Some(item) = plan.plan.get_mut(index) {
+                item.status = new_status;
+            }
+        }
+    }
+
+    /// Find the next pending step in the plan, returns (index, step_description)
+    pub fn find_next_pending_step(&self) -> Option<(usize, String)> {
+        let state = self.state.lock_unchecked();
+        if let Some(ref plan) = state.current_plan {
+            for (index, item) in plan.plan.iter().enumerate() {
+                if matches!(item.status, StepStatus::Pending) {
+                    return Some((index, item.step.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if all plan steps are completed
+    pub fn is_plan_completed(&self) -> bool {
+        let state = self.state.lock_unchecked();
+        if let Some(ref plan) = state.current_plan {
+            plan.plan
+                .iter()
+                .all(|item| matches!(item.status, StepStatus::Completed))
+        } else {
+            false
         }
     }
 
@@ -1390,11 +1457,55 @@ async fn run_task(
                         .await;
                 }
 
+                // If we just executed some tool calls (responses), check if we need to mark a plan step as completed
+                if !responses.is_empty() {
+                    // Find any in-progress step and mark it as completed
+                    if let Some(plan) = sess.get_current_plan() {
+                        for (index, item) in plan.plan.iter().enumerate() {
+                            if matches!(item.status, StepStatus::InProgress) {
+                                debug!("Marking step {} as completed: {}", index, item.step);
+                                sess.update_plan_item_status(index, StepStatus::Completed);
+                                break; // Only mark one step as completed per turn
+                            }
+                        }
+                    }
+                }
+
                 if responses.is_empty() {
-                    debug!("Turn completed");
+                    debug!("Turn completed, checking for plan-driven execution");
                     last_agent_message = get_last_assistant_message_from_turn(
                         &items_to_record_in_conversation_history,
                     );
+
+                    // Check if we have a plan and need to continue execution
+                    if let Some((step_index, step_description)) = sess.find_next_pending_step() {
+                        debug!("Found next pending step: {}", step_description);
+
+                        // Update the step status to in_progress
+                        sess.update_plan_item_status(step_index, StepStatus::InProgress);
+
+                        // Synthesize a new user message to execute this step
+                        let synthesized_message = ResponseInputItem::Message {
+                            role: "user".to_string(),
+                            content: vec![ContentItem::InputText {
+                                text: format!("Execute the next step: {}", step_description),
+                            }],
+                        };
+
+                        // Add the synthesized input to pending input
+                        {
+                            let mut state = sess.state.lock_unchecked();
+                            state.pending_input.push(synthesized_message);
+                        }
+
+                        debug!("Continuing with next plan step");
+                        continue;
+                    } else if sess.is_plan_completed() {
+                        debug!("Plan execution completed - all steps done");
+                    } else {
+                        debug!("No plan or no pending steps - task complete");
+                    }
+
                     sess.maybe_notify(UserNotification::AgentTurnComplete {
                         turn_id: sub_id.clone(),
                         input_messages: turn_input_messages,
@@ -1930,7 +2041,7 @@ async fn handle_plugin_call(
                     success: Some(false),
                 }
             }
-        },
+        }
         Err(e) => {
             // Clean up the temporary file
             let _ = std::fs::remove_file(&input_file);
@@ -1981,7 +2092,9 @@ async fn handle_function_call(
             .await
         }
         "file.create" => {
-            let args = match serde_json::from_str::<crate::file_system_tools::FileCreateArgs>(&arguments) {
+            let args = match serde_json::from_str::<crate::file_system_tools::FileCreateArgs>(
+                &arguments,
+            ) {
                 Ok(a) => a,
                 Err(e) => {
                     return ResponseInputItem::FunctionCallOutput {
@@ -1994,7 +2107,11 @@ async fn handle_function_call(
                 }
             };
 
-            match crate::file_system_handlers::handle_file_create(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+            match crate::file_system_handlers::handle_file_create(
+                args,
+                &turn_context.cwd,
+                &turn_context.sandbox_policy,
+            ) {
                 Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
                 Err(e) => ResponseInputItem::FunctionCallOutput {
                     call_id,
@@ -2006,20 +2123,25 @@ async fn handle_function_call(
             }
         }
         "file.read" => {
-            let args = match serde_json::from_str::<crate::file_system_tools::FileReadArgs>(&arguments) {
-                Ok(a) => a,
-                Err(e) => {
-                    return ResponseInputItem::FunctionCallOutput {
-                        call_id,
-                        output: FunctionCallOutputPayload {
-                            content: format!("failed to parse function arguments: {e}"),
-                            success: None,
-                        },
-                    };
-                }
-            };
+            let args =
+                match serde_json::from_str::<crate::file_system_tools::FileReadArgs>(&arguments) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        return ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("failed to parse function arguments: {e}"),
+                                success: None,
+                            },
+                        };
+                    }
+                };
 
-            match crate::file_system_handlers::handle_file_read(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+            match crate::file_system_handlers::handle_file_read(
+                args,
+                &turn_context.cwd,
+                &turn_context.sandbox_policy,
+            ) {
                 Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
                 Err(e) => ResponseInputItem::FunctionCallOutput {
                     call_id,
@@ -2031,20 +2153,25 @@ async fn handle_function_call(
             }
         }
         "file.edit" => {
-            let args = match serde_json::from_str::<crate::file_system_tools::FileEditArgs>(&arguments) {
-                Ok(a) => a,
-                Err(e) => {
-                    return ResponseInputItem::FunctionCallOutput {
-                        call_id,
-                        output: FunctionCallOutputPayload {
-                            content: format!("failed to parse function arguments: {e}"),
-                            success: None,
-                        },
-                    };
-                }
-            };
+            let args =
+                match serde_json::from_str::<crate::file_system_tools::FileEditArgs>(&arguments) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        return ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("failed to parse function arguments: {e}"),
+                                success: None,
+                            },
+                        };
+                    }
+                };
 
-            match crate::file_system_handlers::handle_file_edit(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+            match crate::file_system_handlers::handle_file_edit(
+                args,
+                &turn_context.cwd,
+                &turn_context.sandbox_policy,
+            ) {
                 Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
                 Err(e) => ResponseInputItem::FunctionCallOutput {
                     call_id,
@@ -2056,7 +2183,9 @@ async fn handle_function_call(
             }
         }
         "directory.create" => {
-            let args = match serde_json::from_str::<crate::file_system_tools::DirectoryCreateArgs>(&arguments) {
+            let args = match serde_json::from_str::<crate::file_system_tools::DirectoryCreateArgs>(
+                &arguments,
+            ) {
                 Ok(a) => a,
                 Err(e) => {
                     return ResponseInputItem::FunctionCallOutput {
@@ -2069,7 +2198,11 @@ async fn handle_function_call(
                 }
             };
 
-            match crate::file_system_handlers::handle_directory_create(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+            match crate::file_system_handlers::handle_directory_create(
+                args,
+                &turn_context.cwd,
+                &turn_context.sandbox_policy,
+            ) {
                 Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
                 Err(e) => ResponseInputItem::FunctionCallOutput {
                     call_id,
@@ -2081,7 +2214,9 @@ async fn handle_function_call(
             }
         }
         "directory.list" => {
-            let args = match serde_json::from_str::<crate::file_system_tools::DirectoryListArgs>(&arguments) {
+            let args = match serde_json::from_str::<crate::file_system_tools::DirectoryListArgs>(
+                &arguments,
+            ) {
                 Ok(a) => a,
                 Err(e) => {
                     return ResponseInputItem::FunctionCallOutput {
@@ -2094,7 +2229,11 @@ async fn handle_function_call(
                 }
             };
 
-            match crate::file_system_handlers::handle_directory_list(args, &turn_context.cwd, &turn_context.sandbox_policy) {
+            match crate::file_system_handlers::handle_directory_list(
+                args,
+                &turn_context.cwd,
+                &turn_context.sandbox_policy,
+            ) {
                 Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
                 Err(e) => ResponseInputItem::FunctionCallOutput {
                     call_id,
@@ -2138,7 +2277,8 @@ async fn handle_function_call(
         }
         // LSP tools
         "code.complete" => {
-            let args = match serde_json::from_str::<crate::lsp_tools::CodeCompleteArgs>(&arguments) {
+            let args = match serde_json::from_str::<crate::lsp_tools::CodeCompleteArgs>(&arguments)
+            {
                 Ok(a) => a,
                 Err(e) => {
                     return ResponseInputItem::FunctionCallOutput {
@@ -2174,18 +2314,19 @@ async fn handle_function_call(
             }
         }
         "code.diagnostics" => {
-            let args = match serde_json::from_str::<crate::lsp_tools::CodeDiagnosticsArgs>(&arguments) {
-                Ok(a) => a,
-                Err(e) => {
-                    return ResponseInputItem::FunctionCallOutput {
-                        call_id,
-                        output: FunctionCallOutputPayload {
-                            content: format!("failed to parse function arguments: {e}"),
-                            success: None,
-                        },
-                    };
-                }
-            };
+            let args =
+                match serde_json::from_str::<crate::lsp_tools::CodeDiagnosticsArgs>(&arguments) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        return ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("failed to parse function arguments: {e}"),
+                                success: None,
+                            },
+                        };
+                    }
+                };
 
             match sess.lsp_manager.as_ref() {
                 Some(lsp_manager) => {
@@ -2210,18 +2351,19 @@ async fn handle_function_call(
             }
         }
         "code.definition" => {
-            let args = match serde_json::from_str::<crate::lsp_tools::CodeDefinitionArgs>(&arguments) {
-                Ok(a) => a,
-                Err(e) => {
-                    return ResponseInputItem::FunctionCallOutput {
-                        call_id,
-                        output: FunctionCallOutputPayload {
-                            content: format!("failed to parse function arguments: {e}"),
-                            success: None,
-                        },
-                    };
-                }
-            };
+            let args =
+                match serde_json::from_str::<crate::lsp_tools::CodeDefinitionArgs>(&arguments) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        return ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("failed to parse function arguments: {e}"),
+                                success: None,
+                            },
+                        };
+                    }
+                };
 
             match sess.lsp_manager.as_ref() {
                 Some(lsp_manager) => {
