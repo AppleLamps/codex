@@ -76,6 +76,48 @@ env_key = "AZURE_OPENAI_API_KEY"  # Or "OPENAI_API_KEY", whichever you use.
 query_params = { api-version = "2025-04-01-preview" }
 ```
 
+### Built-in Providers
+
+Codex includes several built-in providers that you can use without additional configuration:
+
+- **`openai`** - OpenAI's official API (requires `OPENAI_API_KEY`)
+- **`xai`** - xAI's Grok models (requires `XAI_API_KEY`)
+- **`openrouter`** - OpenRouter's unified API for multiple models (requires `OPENROUTER_API_KEY`)
+- **`oss`** - Open source models via Ollama or compatible servers
+
+#### OpenRouter Provider
+
+The OpenRouter provider gives you access to multiple cutting-edge models through a single API:
+
+```toml
+# OpenRouter is built-in, but you can customize it:
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+env_key_instructions = "Get your API key from https://openrouter.ai/keys"
+```
+
+**Supported OpenRouter models with optimized context windows:**
+- `openai/gpt-5` - 400,000 context tokens, 180,000 output tokens
+- `anthropic/claude-sonnet-4` - 200,000 context tokens, 64,000 output tokens
+- `moonshotai/kimi-k2:free` - 65,500 context tokens, 65,500 output tokens (free tier)
+- `qwen/qwen3-coder:free` - 262,144 context tokens, 262,144 output tokens (free tier)
+
+Example usage:
+```bash
+# Set your API key
+export OPENROUTER_API_KEY="your-key-here"
+
+# Use GPT-5 via OpenRouter
+codex --model "openai/gpt-5" --config model_provider=openrouter
+
+# Use free models
+codex --model "qwen/qwen3-coder:free" --config model_provider=openrouter
+```
+
+### Custom HTTP Headers
+
 It is also possible to configure a provider to include extra HTTP headers with a request. These can be hardcoded values (`http_headers`) or values read from environment variables (`env_http_headers`):
 
 ```toml

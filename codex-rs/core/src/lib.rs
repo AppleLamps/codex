@@ -47,7 +47,25 @@ mod models;
 mod openai_model_info;
 mod openai_tools;
 pub mod plan_tool;
+pub mod plugins;
 mod project_doc;
+
+// LSP integration modules
+pub mod lsp_client;
+pub mod lsp_tools;
+pub mod lsp_handlers;
+
+// Test framework integration modules
+pub mod test_runner;
+pub mod test_tools;
+pub mod test_handlers;
+
+// Code analysis modules
+pub mod code_analysis;
+
+// Integration tests
+#[cfg(test)]
+mod integration_tests;
 mod rollout;
 pub(crate) mod safety;
 pub mod seatbelt;

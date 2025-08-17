@@ -113,7 +113,11 @@ Codex supports a rich set of configuration options. Note that the Rust CLI uses 
 
 #### xAI Provider Configuration
 
-This fork includes built-in xAI provider support. The xAI provider is configured as:
+This fork includes built-in support for multiple AI providers:
+
+### xAI Provider Support
+
+The xAI provider is configured as:
 
 ```toml
 [model_providers.xai]
@@ -124,7 +128,28 @@ wire_api = "chat"
 requires_openai_auth = false
 ```
 
-You can also create profiles for different configurations:
+### OpenRouter Provider Support
+
+OpenRouter provider is also built-in and supports multiple cutting-edge models:
+
+```toml
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "chat"
+requires_openai_auth = false
+```
+
+**Supported OpenRouter Models:**
+- `openai/gpt-5` (400k context, 180k output)
+- `anthropic/claude-sonnet-4` (200k context, 64k output)
+- `moonshotai/kimi-k2:free` (65.5k context, 65.5k output)
+- `qwen/qwen3-coder:free` (262k context, 262k output)
+
+### Profile Examples
+
+You can create profiles for different configurations:
 
 ```toml
 [profiles.grok4]
@@ -133,14 +158,26 @@ model = "grok-4"
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 
-[profiles.grok4_readonly]
-model_provider = "xai"
-model = "grok-4"
+[profiles.gpt5]
+model_provider = "openrouter"
+model = "openai/gpt-5"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[profiles.claude4]
+model_provider = "openrouter"
+model = "anthropic/claude-sonnet-4"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[profiles.qwen_free]
+model_provider = "openrouter"
+model = "qwen/qwen3-coder:free"
 approval_policy = "never"
 sandbox_mode = "read-only"
 ```
 
-Then use with: `codex --profile grok4`
+Then use with: `codex --profile grok4`, `codex --profile gpt5`, etc.
 
 ### Model Context Protocol Support
 

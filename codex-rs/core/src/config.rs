@@ -163,6 +163,11 @@ pub struct Config {
 
     /// The value for the `originator` header included with Responses API requests.
     pub internal_originator: Option<String>,
+
+    /// Optional path to a directory containing user-defined plugin tools.
+    /// When set, Codex will scan this directory for plugin manifests and
+    /// dynamically register the discovered tools.
+    pub plugin_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -409,6 +414,9 @@ pub struct ConfigToml {
     pub internal_originator: Option<String>,
 
     pub projects: Option<HashMap<String, ProjectConfig>>,
+
+    /// Optional path to a directory containing user-defined plugin tools.
+    pub plugin_dir: Option<PathBuf>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -672,6 +680,7 @@ impl Config {
             include_plan_tool: include_plan_tool.unwrap_or(false),
             include_apply_patch_tool: include_apply_patch_tool_val,
             internal_originator: cfg.internal_originator,
+            plugin_dir: cfg.plugin_dir,
         };
         Ok(config)
     }
@@ -1036,6 +1045,7 @@ disable_response_storage = true
                 include_plan_tool: false,
                 include_apply_patch_tool: false,
                 internal_originator: None,
+                plugin_dir: None,
             },
             o3_profile_config
         );
@@ -1088,6 +1098,7 @@ disable_response_storage = true
             include_plan_tool: false,
             include_apply_patch_tool: false,
             internal_originator: None,
+            plugin_dir: None,
         };
 
         assert_eq!(expected_gpt3_profile_config, gpt3_profile_config);
@@ -1155,6 +1166,7 @@ disable_response_storage = true
             include_plan_tool: false,
             include_apply_patch_tool: false,
             internal_originator: None,
+            plugin_dir: None,
         };
 
         assert_eq!(expected_zdr_profile_config, zdr_profile_config);

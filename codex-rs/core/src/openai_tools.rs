@@ -5,10 +5,13 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+use crate::lsp_tools::{create_code_complete_tool, create_code_diagnostics_tool, create_code_definition_tool, create_code_references_tool, create_code_symbols_tool, create_code_hover_tool};
 use crate::model_family::ModelFamily;
 use crate::plan_tool::PLAN_TOOL;
+use crate::plugins::Plugin;
 use crate::protocol::AskForApproval;
 use crate::protocol::SandboxPolicy;
+use crate::test_tools::{create_test_run_tool, create_test_analyze_tool, create_test_generate_tool, create_test_debug_tool};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ResponsesApiTool {
@@ -45,6 +48,8 @@ pub struct ToolsConfig {
     pub plan_tool: bool,
     pub apply_patch_tool: bool,
     pub file_system_tools: bool,
+    pub lsp_tools: bool,
+    pub test_tools: bool,
 }
 
 impl ToolsConfig {
@@ -71,6 +76,8 @@ impl ToolsConfig {
             plan_tool: include_plan_tool,
             apply_patch_tool: include_apply_patch_tool || model_family.uses_apply_patch_tool,
             file_system_tools: true, // Enable file system tools by default
+            lsp_tools: true, // Enable LSP tools by default
+            test_tools: true, // Enable test tools by default
         }
     }
 }
@@ -367,6 +374,56 @@ pub(crate) fn create_tools_json_for_chat_completions_api(
     Ok(tools_json)
 }
 
+/// Converts a Plugin to an OpenAI tool
+pub(crate) fn plugin_to_openai_tool(plugin: &Plugin) -> Result<OpenAiTool, serde_json::Error> {
+    // Convert plugin parameters to JsonSchema
+    let mut properties = BTreeMap::new();
+
+    for (prop_name, prop_def) in &plugin.parameters.properties {
+        let json_schema = match prop_def.prop_type.as_str() {
+            "string" => JsonSchema::String {
+                description: prop_def.description.clone(),
+            },
+            "number" | "integer" => JsonSchema::Number {
+                description: prop_def.description.clone(),
+            },
+            "boolean" => JsonSchema::Boolean {
+                description: prop_def.description.clone(),
+            },
+            "array" => JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: prop_def.description.clone(),
+            },
+            "object" => JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(true),
+            },
+            _ => JsonSchema::String {
+                description: prop_def.description.clone(),
+            },
+        };
+        properties.insert(prop_name.clone(), json_schema);
+    }
+
+    let parameters = JsonSchema::Object {
+        properties,
+        required: if plugin.parameters.required.is_empty() {
+            None
+        } else {
+            Some(plugin.parameters.required.clone())
+        },
+        additional_properties: Some(false),
+    };
+
+    Ok(OpenAiTool::Function(ResponsesApiTool {
+        name: plugin.name.clone(),
+        description: plugin.description.clone(),
+        strict: false,
+        parameters,
+    }))
+}
+
 pub(crate) fn mcp_tool_to_openai_tool(
     fully_qualified_name: String,
     tool: mcp_types::Tool,
@@ -516,12 +573,13 @@ fn sanitize_json_schema(value: &mut JsonValue) {
     }
 }
 
-/// Returns a list of OpenAiTools based on the provided config and MCP tools.
+/// Returns a list of OpenAiTools based on the provided config, MCP tools, and plugins.
 /// Note that the keys of mcp_tools should be fully qualified names. See
 /// [`McpConnectionManager`] for more details.
 pub(crate) fn get_openai_tools(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<String, mcp_types::Tool>>,
+    plugins: Option<&[Plugin]>,
 ) -> Vec<OpenAiTool> {
     let mut tools: Vec<OpenAiTool> = Vec::new();
 
@@ -553,12 +611,45 @@ pub(crate) fn get_openai_tools(
         tools.push(crate::file_system_tools::create_directory_list_tool());
     }
 
+    // Add LSP tools for code intelligence
+    if config.lsp_tools {
+        tools.push(create_code_complete_tool());
+        tools.push(create_code_diagnostics_tool());
+        tools.push(create_code_definition_tool());
+        tools.push(create_code_references_tool());
+        tools.push(create_code_symbols_tool());
+        tools.push(create_code_hover_tool());
+    }
+
+    // Add test framework tools
+    if config.test_tools {
+        tools.push(create_test_run_tool());
+        tools.push(create_test_analyze_tool());
+        tools.push(create_test_generate_tool());
+        tools.push(create_test_debug_tool());
+    }
+
     if let Some(mcp_tools) = mcp_tools {
         for (name, tool) in mcp_tools {
             match mcp_tool_to_openai_tool(name.clone(), tool.clone()) {
                 Ok(converted_tool) => tools.push(OpenAiTool::Function(converted_tool)),
                 Err(e) => {
                     tracing::error!("Failed to convert {name:?} MCP tool to OpenAI tool: {e:?}");
+                }
+            }
+        }
+    }
+
+    // Add plugin tools
+    if let Some(plugins) = plugins {
+        for plugin in plugins {
+            match plugin_to_openai_tool(plugin) {
+                Ok(plugin_tool) => {
+                    tracing::info!("Registered plugin tool: {}", plugin.name);
+                    tools.push(plugin_tool);
+                },
+                Err(e) => {
+                    tracing::error!("Failed to convert plugin '{}' to OpenAI tool: {e:?}", plugin.name);
                 }
             }
         }
@@ -608,9 +699,13 @@ mod tests {
             true,
             model_family.uses_apply_patch_tool,
         );
-        let tools = get_openai_tools(&config, Some(HashMap::new()));
+        let tools = get_openai_tools(&config, Some(HashMap::new()), None);
 
-        assert_eq_tool_names(&tools, &["local_shell", "update_plan"]);
+        assert_eq_tool_names(&tools, &[
+            "local_shell", "update_plan", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug"
+        ]);
     }
 
     #[test]
@@ -623,9 +718,13 @@ mod tests {
             true,
             model_family.uses_apply_patch_tool,
         );
-        let tools = get_openai_tools(&config, Some(HashMap::new()));
+        let tools = get_openai_tools(&config, Some(HashMap::new()), None);
 
-        assert_eq_tool_names(&tools, &["shell", "update_plan"]);
+        assert_eq_tool_names(&tools, &[
+            "shell", "update_plan", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug"
+        ]);
     }
 
     #[test]
@@ -674,12 +773,17 @@ mod tests {
                     description: Some("Do something cool".to_string()),
                 },
             )])),
+            None,
         );
 
-        assert_eq_tool_names(&tools, &["shell", "test_server/do_something_cool"]);
+        assert_eq_tool_names(&tools, &[
+            "shell", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug", "test_server/do_something_cool"
+        ]);
 
         assert_eq!(
-            tools[1],
+            tools[16], // MCP tool is now at index 16 after file system, LSP, and test tools
             OpenAiTool::Function(ResponsesApiTool {
                 name: "test_server/do_something_cool".to_string(),
                 parameters: JsonSchema::Object {
@@ -754,12 +858,17 @@ mod tests {
                     description: Some("Search docs".to_string()),
                 },
             )])),
+            None,
         );
 
-        assert_eq_tool_names(&tools, &["shell", "dash/search"]);
+        assert_eq_tool_names(&tools, &[
+            "shell", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug", "dash/search"
+        ]);
 
         assert_eq!(
-            tools[1],
+            tools[16], // MCP tool is now at index 16 after file system, LSP, and test tools
             OpenAiTool::Function(ResponsesApiTool {
                 name: "dash/search".to_string(),
                 parameters: JsonSchema::Object {
@@ -808,11 +917,16 @@ mod tests {
                     description: Some("Pagination".to_string()),
                 },
             )])),
+            None,
         );
 
-        assert_eq_tool_names(&tools, &["shell", "dash/paginate"]);
+        assert_eq_tool_names(&tools, &[
+            "shell", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug", "dash/paginate"
+        ]);
         assert_eq!(
-            tools[1],
+            tools[16], // MCP tool is now at index 16 after file system, LSP, and test tools
             OpenAiTool::Function(ResponsesApiTool {
                 name: "dash/paginate".to_string(),
                 parameters: JsonSchema::Object {
@@ -859,11 +973,16 @@ mod tests {
                     description: Some("Tags".to_string()),
                 },
             )])),
+            None,
         );
 
-        assert_eq_tool_names(&tools, &["shell", "dash/tags"]);
+        assert_eq_tool_names(&tools, &[
+            "shell", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug", "dash/tags"
+        ]);
         assert_eq!(
-            tools[1],
+            tools[16], // MCP tool is now at index 16 after file system, LSP, and test tools
             OpenAiTool::Function(ResponsesApiTool {
                 name: "dash/tags".to_string(),
                 parameters: JsonSchema::Object {
@@ -913,11 +1032,16 @@ mod tests {
                     description: Some("AnyOf Value".to_string()),
                 },
             )])),
+            None,
         );
 
-        assert_eq_tool_names(&tools, &["shell", "dash/value"]);
+        assert_eq_tool_names(&tools, &[
+            "shell", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug", "dash/value"
+        ]);
         assert_eq!(
-            tools[1],
+            tools[16], // MCP tool is now at index 16 after file system, LSP, and test tools
             OpenAiTool::Function(ResponsesApiTool {
                 name: "dash/value".to_string(),
                 parameters: JsonSchema::Object {
@@ -932,5 +1056,137 @@ mod tests {
                 strict: false,
             })
         );
+    }
+
+    #[test]
+    fn test_plugin_to_openai_tool() {
+        use crate::plugins::{Plugin, PluginParameters, PluginProperty};
+        use std::collections::HashMap;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let plugin_dir = temp_dir.path().join("test_plugin");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        let mut properties = HashMap::new();
+        properties.insert("input".to_string(), PluginProperty {
+            prop_type: "string".to_string(),
+            description: Some("Input parameter".to_string()),
+            default: None,
+        });
+        properties.insert("count".to_string(), PluginProperty {
+            prop_type: "number".to_string(),
+            description: Some("Count parameter".to_string()),
+            default: None,
+        });
+
+        let plugin = Plugin {
+            name: "test_plugin".to_string(),
+            description: "A test plugin".to_string(),
+            executable_path: plugin_dir.join("run.sh"),
+            parameters: PluginParameters {
+                param_type: "object".to_string(),
+                required: vec!["input".to_string()],
+                properties,
+            },
+            plugin_dir: plugin_dir.clone(),
+        };
+
+        let result = plugin_to_openai_tool(&plugin).unwrap();
+
+        match result {
+            OpenAiTool::Function(tool) => {
+                assert_eq!(tool.name, "test_plugin");
+                assert_eq!(tool.description, "A test plugin");
+                assert!(!tool.strict);
+
+                match tool.parameters {
+                    JsonSchema::Object { properties, required, additional_properties } => {
+                        assert_eq!(properties.len(), 2);
+                        assert!(properties.contains_key("input"));
+                        assert!(properties.contains_key("count"));
+                        assert_eq!(required, Some(vec!["input".to_string()]));
+                        assert_eq!(additional_properties, Some(false));
+
+                        // Check input parameter
+                        match &properties["input"] {
+                            JsonSchema::String { description } => {
+                                assert_eq!(description, &Some("Input parameter".to_string()));
+                            },
+                            _ => panic!("Expected string parameter"),
+                        }
+
+                        // Check count parameter
+                        match &properties["count"] {
+                            JsonSchema::Number { description } => {
+                                assert_eq!(description, &Some("Count parameter".to_string()));
+                            },
+                            _ => panic!("Expected number parameter"),
+                        }
+                    },
+                    _ => panic!("Expected object schema"),
+                }
+            },
+            _ => panic!("Expected function tool"),
+        }
+    }
+
+    #[test]
+    fn test_get_openai_tools_with_plugins() {
+        use crate::plugins::{Plugin, PluginParameters, PluginProperty};
+        use std::collections::HashMap;
+        use tempfile::TempDir;
+
+        let model_family = find_family_for_model("o3").expect("o3 should be a valid model family");
+        let config = ToolsConfig::new(
+            &model_family,
+            AskForApproval::Never,
+            SandboxPolicy::ReadOnly,
+            false, // no plan tool
+            model_family.uses_apply_patch_tool,
+        );
+
+        let temp_dir = TempDir::new().unwrap();
+        let plugin_dir = temp_dir.path().join("test_plugin");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        let mut properties = HashMap::new();
+        properties.insert("message".to_string(), PluginProperty {
+            prop_type: "string".to_string(),
+            description: Some("Message to process".to_string()),
+            default: None,
+        });
+
+        let plugin = Plugin {
+            name: "custom_tool".to_string(),
+            description: "A custom plugin tool".to_string(),
+            executable_path: plugin_dir.join("run.py"),
+            parameters: PluginParameters {
+                param_type: "object".to_string(),
+                required: vec!["message".to_string()],
+                properties,
+            },
+            plugin_dir: plugin_dir.clone(),
+        };
+
+        let plugins = vec![plugin];
+        let tools = get_openai_tools(&config, None, Some(&plugins));
+
+        // Should have shell + file system tools + LSP tools + test tools + custom plugin
+        assert_eq_tool_names(&tools, &[
+            "shell", "file.create", "file.read", "file.edit", "directory.create", "directory.list",
+            "code.complete", "code.diagnostics", "code.definition", "code.references", "code.symbols", "code.hover",
+            "test.run", "test.analyze", "test.generate", "test.debug", "custom_tool"
+        ]);
+
+        // Check that the plugin tool is correctly converted
+        let plugin_tool = &tools[16]; // Plugin should be at index 16
+        match plugin_tool {
+            OpenAiTool::Function(tool) => {
+                assert_eq!(tool.name, "custom_tool");
+                assert_eq!(tool.description, "A custom plugin tool");
+            },
+            _ => panic!("Expected function tool"),
+        }
     }
 }

@@ -7,6 +7,7 @@ use crate::onboarding::onboarding_screen::KeyboardHandler;
 use crate::onboarding::onboarding_screen::OnboardingScreen;
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
 use crate::should_show_login_screen;
+use crate::should_show_model_selection;
 use crate::slash_command::SlashCommand;
 use crate::tui;
 use codex_core::ConversationManager;
@@ -82,6 +83,18 @@ pub(crate) struct ChatWidgetArgs {
     enhanced_keys_supported: bool,
 }
 
+impl ChatWidgetArgs {
+    #[cfg(test)]
+    pub(crate) fn new_for_test(config: Config) -> Self {
+        Self {
+            config,
+            initial_prompt: None,
+            initial_images: Vec::new(),
+            enhanced_keys_supported: false,
+        }
+    }
+}
+
 impl App<'_> {
     pub(crate) fn new(
         config: Config,
@@ -138,7 +151,8 @@ impl App<'_> {
         }
 
         let show_login_screen = should_show_login_screen(&config);
-        let app_state = if show_login_screen || show_trust_screen {
+        let show_model_selection = should_show_model_selection(&config);
+        let app_state = if show_login_screen || show_trust_screen || show_model_selection {
             let chat_widget_args = ChatWidgetArgs {
                 config: config.clone(),
                 initial_prompt,

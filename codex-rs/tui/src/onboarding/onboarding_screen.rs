@@ -14,6 +14,7 @@ use crate::app_event_sender::AppEventSender;
 use crate::onboarding::auth::AuthModeWidget;
 use crate::onboarding::auth::SignInState;
 use crate::onboarding::continue_to_chat::ContinueToChatWidget;
+use crate::onboarding::model_selection::ModelSelectionWidget;
 use crate::onboarding::trust_directory::TrustDirectorySelection;
 use crate::onboarding::trust_directory::TrustDirectoryWidget;
 use crate::onboarding::welcome::WelcomeWidget;
@@ -25,6 +26,7 @@ use std::sync::Mutex;
 enum Step {
     Welcome(WelcomeWidget),
     Auth(AuthModeWidget),
+    ModelSelection(ModelSelectionWidget),
     TrustDirectory(TrustDirectoryWidget),
     ContinueToChat(ContinueToChatWidget),
 }
@@ -33,6 +35,7 @@ pub(crate) trait KeyboardHandler {
     fn handle_key_event(&mut self, key_event: KeyEvent);
 }
 
+#[derive(Debug, PartialEq)]
 pub(crate) enum StepState {
     Hidden,
     InProgress,
@@ -86,9 +89,15 @@ impl OnboardingScreen {
             // Default to not trusting the directory if it's not a git repo.
             TrustDirectorySelection::DontTrust
         };
-        // Share ChatWidgetArgs between steps so changes in the TrustDirectory step
+        // Share ChatWidgetArgs between steps so changes in the ModelSelection and TrustDirectory steps
         // are reflected when continuing to chat.
         let shared_chat_args = Arc::new(Mutex::new(chat_widget_args));
+
+        // Always show model selection step
+        steps.push(Step::ModelSelection(ModelSelectionWidget::new(
+            shared_chat_args.clone(),
+        )));
+
         if show_trust_screen {
             steps.push(Step::TrustDirectory(TrustDirectoryWidget {
                 cwd,
@@ -243,6 +252,7 @@ impl KeyboardHandler for Step {
         match self {
             Step::Welcome(_) | Step::ContinueToChat(_) => (),
             Step::Auth(widget) => widget.handle_key_event(key_event),
+            Step::ModelSelection(widget) => widget.handle_key_event(key_event),
             Step::TrustDirectory(widget) => widget.handle_key_event(key_event),
         }
     }
@@ -253,6 +263,7 @@ impl StepStateProvider for Step {
         match self {
             Step::Welcome(w) => w.get_step_state(),
             Step::Auth(w) => w.get_step_state(),
+            Step::ModelSelection(w) => w.get_step_state(),
             Step::TrustDirectory(w) => w.get_step_state(),
             Step::ContinueToChat(w) => w.get_step_state(),
         }
@@ -266,6 +277,9 @@ impl WidgetRef for Step {
                 widget.render_ref(area, buf);
             }
             Step::Auth(widget) => {
+                widget.render_ref(area, buf);
+            }
+            Step::ModelSelection(widget) => {
                 widget.render_ref(area, buf);
             }
             Step::TrustDirectory(widget) => {

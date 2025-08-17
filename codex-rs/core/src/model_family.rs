@@ -110,7 +110,90 @@ pub fn find_family_for_model(slug: &str) -> Option<ModelFamily> {
             slug, "grok-4",
             supports_reasoning_summaries: true,
         )
+    } else if slug.starts_with("openai/gpt-5") {
+        model_family!(
+            slug, "openai/gpt-5",
+            supports_reasoning_summaries: true,
+        )
+    } else if slug.starts_with("anthropic/claude-sonnet-4") {
+        model_family!(
+            slug, "anthropic/claude-sonnet-4",
+            supports_reasoning_summaries: true,
+        )
+    } else if slug.starts_with("moonshotai/kimi-k2") {
+        simple_model_family!(slug, "moonshotai/kimi-k2")
+    } else if slug.starts_with("qwen/qwen3-coder") {
+        simple_model_family!(slug, "qwen/qwen3-coder")
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_openrouter_model_families() {
+        // Test OpenAI GPT-5 via OpenRouter
+        let gpt5_family = find_family_for_model("openai/gpt-5").expect("openai/gpt-5 should be recognized");
+        assert_eq!(gpt5_family.slug, "openai/gpt-5");
+        assert_eq!(gpt5_family.family, "openai/gpt-5");
+        assert_eq!(gpt5_family.supports_reasoning_summaries, true);
+        assert_eq!(gpt5_family.needs_special_apply_patch_instructions, false);
+        assert_eq!(gpt5_family.uses_local_shell_tool, false);
+        assert_eq!(gpt5_family.uses_apply_patch_tool, false);
+
+        // Test Anthropic Claude Sonnet 4 via OpenRouter
+        let claude_family = find_family_for_model("anthropic/claude-sonnet-4").expect("anthropic/claude-sonnet-4 should be recognized");
+        assert_eq!(claude_family.slug, "anthropic/claude-sonnet-4");
+        assert_eq!(claude_family.family, "anthropic/claude-sonnet-4");
+        assert_eq!(claude_family.supports_reasoning_summaries, true);
+        assert_eq!(claude_family.needs_special_apply_patch_instructions, false);
+        assert_eq!(claude_family.uses_local_shell_tool, false);
+        assert_eq!(claude_family.uses_apply_patch_tool, false);
+
+        // Test Moonshot Kimi K2 via OpenRouter
+        let kimi_family = find_family_for_model("moonshotai/kimi-k2:free").expect("moonshotai/kimi-k2:free should be recognized");
+        assert_eq!(kimi_family.slug, "moonshotai/kimi-k2:free");
+        assert_eq!(kimi_family.family, "moonshotai/kimi-k2");
+        assert_eq!(kimi_family.supports_reasoning_summaries, false);
+        assert_eq!(kimi_family.needs_special_apply_patch_instructions, false);
+        assert_eq!(kimi_family.uses_local_shell_tool, false);
+        assert_eq!(kimi_family.uses_apply_patch_tool, false);
+
+        // Test Qwen 3 Coder via OpenRouter
+        let qwen_family = find_family_for_model("qwen/qwen3-coder:free").expect("qwen/qwen3-coder:free should be recognized");
+        assert_eq!(qwen_family.slug, "qwen/qwen3-coder:free");
+        assert_eq!(qwen_family.family, "qwen/qwen3-coder");
+        assert_eq!(qwen_family.supports_reasoning_summaries, false);
+        assert_eq!(qwen_family.needs_special_apply_patch_instructions, false);
+        assert_eq!(qwen_family.uses_local_shell_tool, false);
+        assert_eq!(qwen_family.uses_apply_patch_tool, false);
+    }
+
+    #[test]
+    fn test_openrouter_model_family_prefixes() {
+        // Test that different versions/variants are recognized
+        assert!(find_family_for_model("openai/gpt-5-turbo").is_some());
+        assert!(find_family_for_model("anthropic/claude-sonnet-4-20241120").is_some());
+        assert!(find_family_for_model("moonshotai/kimi-k2").is_some());
+        assert!(find_family_for_model("qwen/qwen3-coder").is_some());
+    }
+
+    #[test]
+    fn test_unknown_openrouter_models() {
+        // Test that unknown models return None
+        assert!(find_family_for_model("unknown/model").is_none());
+        assert!(find_family_for_model("openrouter/unknown").is_none());
+    }
+
+    #[test]
+    fn test_existing_model_families_still_work() {
+        // Ensure we didn't break existing model families
+        assert!(find_family_for_model("gpt-4o").is_some());
+        assert!(find_family_for_model("o3").is_some());
+        assert!(find_family_for_model("grok-4").is_some());
+        assert!(find_family_for_model("gpt-5").is_some());
     }
 }

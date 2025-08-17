@@ -86,4 +86,5 @@ chrono = { version = "0.4", features = ["serde"] }
 insta = "1.43.1"
 pretty_assertions = "1"
 rand = "0.9"
+tempfile = "3"
 vt100 = "0.16.2"

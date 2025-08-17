@@ -292,6 +292,23 @@ pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
                 requires_openai_auth: false,
             },
         ),
+        (
+            "openrouter",
+            P {
+                name: "OpenRouter".into(),
+                base_url: Some("https://openrouter.ai/api/v1".to_string()),
+                env_key: Some("OPENROUTER_API_KEY".to_string()),
+                env_key_instructions: Some("Get your API key from https://openrouter.ai/keys".to_string()),
+                wire_api: WireApi::Chat,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                requires_openai_auth: false,
+            },
+        ),
         (BUILT_IN_OSS_MODEL_PROVIDER_ID, create_oss_provider()),
     ]
     .into_iter()
@@ -393,6 +410,56 @@ query_params = { api-version = "2025-04-01-preview" }
         };
 
         let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
+        assert_eq!(expected_provider, provider);
+    }
+
+    #[test]
+    fn test_openrouter_provider_is_built_in() {
+        let providers = built_in_model_providers();
+        let openrouter = providers.get("openrouter").expect("OpenRouter should be a built-in provider");
+
+        assert_eq!(openrouter.name, "OpenRouter");
+        assert_eq!(openrouter.base_url, Some("https://openrouter.ai/api/v1".to_string()));
+        assert_eq!(openrouter.env_key, Some("OPENROUTER_API_KEY".to_string()));
+        assert_eq!(openrouter.env_key_instructions, Some("Get your API key from https://openrouter.ai/keys".to_string()));
+        assert_eq!(openrouter.wire_api, WireApi::Chat);
+        assert_eq!(openrouter.requires_openai_auth, false);
+    }
+
+    #[test]
+    fn test_openrouter_provider_url_generation() {
+        let providers = built_in_model_providers();
+        let openrouter = providers.get("openrouter").expect("OpenRouter should be a built-in provider");
+
+        let url = openrouter.get_full_url(&None);
+        assert_eq!(url, "https://openrouter.ai/api/v1/chat/completions");
+    }
+
+    #[test]
+    fn test_deserialize_openrouter_model_provider_toml() {
+        let openrouter_provider_toml = r#"
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+env_key_instructions = "Get your API key from https://openrouter.ai/keys"
+wire_api = "chat"
+        "#;
+        let expected_provider = ModelProviderInfo {
+            name: "OpenRouter".into(),
+            base_url: Some("https://openrouter.ai/api/v1".into()),
+            env_key: Some("OPENROUTER_API_KEY".into()),
+            env_key_instructions: Some("Get your API key from https://openrouter.ai/keys".into()),
+            wire_api: WireApi::Chat,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            requires_openai_auth: false,
+        };
+
+        let provider: ModelProviderInfo = toml::from_str(openrouter_provider_toml).unwrap();
         assert_eq!(expected_provider, provider);
     }
 

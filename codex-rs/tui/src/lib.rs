@@ -314,6 +314,11 @@ fn should_show_login_screen(config: &Config) -> bool {
     }
 }
 
+fn should_show_model_selection(_config: &Config) -> bool {
+    // Always show model selection so users can choose their preferred model
+    true
+}
+
 /// Determine if user has configured a sandbox / approval policy,
 /// or if the current cwd project is trusted, and updates the config
 /// accordingly.

@@ -69,6 +69,7 @@ use crate::openai_tools::ToolsConfig;
 use crate::openai_tools::get_openai_tools;
 use crate::parse_command::parse_command;
 use crate::plan_tool::handle_update_plan;
+use crate::plugins::{Plugin, discover_plugins};
 use crate::project_doc::get_user_instructions;
 use crate::protocol::AgentMessageDeltaEvent;
 use crate::protocol::AgentMessageEvent;
@@ -248,6 +249,15 @@ pub(crate) struct Session {
     codex_linux_sandbox_exe: Option<PathBuf>,
     user_shell: shell::Shell,
     show_raw_agent_reasoning: bool,
+
+    /// Discovered plugin tools
+    plugins: Vec<Plugin>,
+
+    /// LSP manager for code intelligence
+    lsp_manager: Option<crate::lsp_handlers::LspManager>,
+
+    /// Test manager for running tests
+    test_manager: Option<crate::test_handlers::TestManager>,
 }
 
 /// The context needed for a single turn of the conversation.
@@ -470,6 +480,9 @@ impl Session {
             model_reasoning_summary,
             session_id,
         );
+        // Clone cwd before moving it to TurnContext
+        let cwd_for_managers = cwd.clone();
+
         let turn_context = TurnContext {
             client,
             tools_config: ToolsConfig::new(
@@ -487,6 +500,33 @@ impl Session {
             cwd,
             disable_response_storage,
         };
+        // Discover plugins from the configured plugin directory
+        let plugins = if let Some(plugin_dir) = &config.plugin_dir {
+            match discover_plugins(plugin_dir) {
+                Ok(plugins) => {
+                    if !plugins.is_empty() {
+                        tracing::info!("Discovered {} plugin(s) from {}", plugins.len(), plugin_dir.display());
+                        for plugin in &plugins {
+                            tracing::info!("  - {}: {}", plugin.name, plugin.description);
+                        }
+                    }
+                    plugins
+                },
+                Err(e) => {
+                    tracing::error!("Failed to discover plugins from {}: {}", plugin_dir.display(), e);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        // Initialize LSP manager
+        let lsp_manager = Some(crate::lsp_handlers::LspManager::new(cwd_for_managers.clone()));
+
+        // Initialize test manager
+        let test_manager = Some(crate::test_handlers::TestManager::new(cwd_for_managers));
+
         let sess = Arc::new(Session {
             session_id,
             tx_event: tx_event.clone(),
@@ -497,6 +537,9 @@ impl Session {
             codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
             user_shell: default_shell,
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
+            plugins,
+            lsp_manager,
+            test_manager,
         });
 
         // record the initial user instructions and environment context,
@@ -1392,6 +1435,7 @@ async fn run_turn(
     let tools = get_openai_tools(
         &turn_context.tools_config,
         Some(sess.mcp_connection_manager.list_all_tools()),
+        Some(&sess.plugins),
     );
 
     let prompt = Prompt {
@@ -1832,6 +1876,78 @@ async fn handle_response_item(
     Ok(output)
 }
 
+/// Handles execution of a plugin tool call
+async fn handle_plugin_call(
+    plugin: &Plugin,
+    arguments: String,
+    call_id: String,
+    turn_context: &TurnContext,
+) -> ResponseInputItem {
+    tracing::info!("Executing plugin: {}", plugin.name);
+
+    // Create a temporary file to pass arguments to the plugin
+    let temp_dir = std::env::temp_dir();
+    let input_file = temp_dir.join(format!("codex_plugin_input_{}.json", call_id));
+
+    // Write arguments to the temporary file
+    if let Err(e) = std::fs::write(&input_file, &arguments) {
+        return ResponseInputItem::FunctionCallOutput {
+            call_id,
+            output: FunctionCallOutputPayload {
+                content: format!("Failed to write plugin input: {}", e),
+                success: Some(false),
+            },
+        };
+    }
+
+    // Execute the plugin
+    let mut cmd = std::process::Command::new(&plugin.executable_path);
+    cmd.arg(&input_file)
+        .current_dir(&turn_context.cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let result = match cmd.output() {
+        Ok(output) => {
+            // Clean up the temporary file
+            let _ = std::fs::remove_file(&input_file);
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if output.status.success() {
+                FunctionCallOutputPayload {
+                    content: stdout.to_string(),
+                    success: Some(true),
+                }
+            } else {
+                FunctionCallOutputPayload {
+                    content: if stderr.is_empty() {
+                        stdout.to_string()
+                    } else {
+                        format!("Error: {}\nOutput: {}", stderr, stdout)
+                    },
+                    success: Some(false),
+                }
+            }
+        },
+        Err(e) => {
+            // Clean up the temporary file
+            let _ = std::fs::remove_file(&input_file);
+
+            FunctionCallOutputPayload {
+                content: format!("Failed to execute plugin: {}", e),
+                success: Some(false),
+            }
+        }
+    };
+
+    ResponseInputItem::FunctionCallOutput {
+        call_id,
+        output: result,
+    }
+}
+
 async fn handle_function_call(
     sess: &Session,
     turn_context: &TurnContext,
@@ -1841,6 +1957,11 @@ async fn handle_function_call(
     arguments: String,
     call_id: String,
 ) -> ResponseInputItem {
+    // Check if this is a plugin tool call
+    if let Some(plugin) = sess.plugins.iter().find(|p| p.name == name) {
+        return handle_plugin_call(plugin, arguments, call_id, turn_context).await;
+    }
+
     match name.as_str() {
         "container.exec" | "shell" => {
             let params = match parse_container_exec_arguments(arguments, turn_context, &call_id) {
@@ -2014,6 +2135,152 @@ async fn handle_function_call(
                 call_id,
             )
             .await
+        }
+        // LSP tools
+        "code.complete" => {
+            let args = match serde_json::from_str::<crate::lsp_tools::CodeCompleteArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match sess.lsp_manager.as_ref() {
+                Some(lsp_manager) => {
+                    match crate::lsp_handlers::handle_code_complete(args, lsp_manager).await {
+                        Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                        Err(e) => ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("Error: {e}"),
+                                success: Some(false),
+                            },
+                        },
+                    }
+                }
+                None => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: "LSP manager not initialized".to_string(),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        "code.diagnostics" => {
+            let args = match serde_json::from_str::<crate::lsp_tools::CodeDiagnosticsArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match sess.lsp_manager.as_ref() {
+                Some(lsp_manager) => {
+                    match crate::lsp_handlers::handle_code_diagnostics(args, lsp_manager).await {
+                        Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                        Err(e) => ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("Error: {e}"),
+                                success: Some(false),
+                            },
+                        },
+                    }
+                }
+                None => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: "LSP manager not initialized".to_string(),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        "code.definition" => {
+            let args = match serde_json::from_str::<crate::lsp_tools::CodeDefinitionArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match sess.lsp_manager.as_ref() {
+                Some(lsp_manager) => {
+                    match crate::lsp_handlers::handle_code_definition(args, lsp_manager).await {
+                        Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                        Err(e) => ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("Error: {e}"),
+                                success: Some(false),
+                            },
+                        },
+                    }
+                }
+                None => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: "LSP manager not initialized".to_string(),
+                        success: Some(false),
+                    },
+                },
+            }
+        }
+        // Test tools
+        "test.run" => {
+            let args = match serde_json::from_str::<crate::test_tools::TestRunArgs>(&arguments) {
+                Ok(a) => a,
+                Err(e) => {
+                    return ResponseInputItem::FunctionCallOutput {
+                        call_id,
+                        output: FunctionCallOutputPayload {
+                            content: format!("failed to parse function arguments: {e}"),
+                            success: None,
+                        },
+                    };
+                }
+            };
+
+            match sess.test_manager.as_ref() {
+                Some(test_manager) => {
+                    match crate::test_handlers::handle_test_run(args, test_manager).await {
+                        Ok(output) => ResponseInputItem::FunctionCallOutput { call_id, output },
+                        Err(e) => ResponseInputItem::FunctionCallOutput {
+                            call_id,
+                            output: FunctionCallOutputPayload {
+                                content: format!("Error: {e}"),
+                                success: Some(false),
+                            },
+                        },
+                    }
+                }
+                None => ResponseInputItem::FunctionCallOutput {
+                    call_id,
+                    output: FunctionCallOutputPayload {
+                        content: "Test manager not initialized".to_string(),
+                        success: Some(false),
+                    },
+                },
+            }
         }
         "update_plan" => handle_update_plan(sess, arguments, sub_id, call_id).await,
         _ => {

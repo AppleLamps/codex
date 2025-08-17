@@ -282,6 +282,8 @@ base_url = "https://openrouter.ai/api/v1"
 env_key = "OPENROUTER_API_KEY"
 ```
 
+**Note**: OpenRouter is now a built-in provider in Codex, so you don't need to define it manually unless you want to customize the configuration.
+
 Providers that speak the Responses API are also supported by adding `wire_api = "responses"` as part of the definition. Accessing OpenAI models via Azure is an example of such a provider, though it also requires specifying additional `query_params` that need to be appended to the request URL:
 
 ```toml
@@ -347,6 +349,89 @@ Advanced: you can persist this in your config instead of environment variables b
 [model_providers.oss]
 name = "Open Source"
 base_url = "http://my-ollama.example.com:11434/v1"
+```
+
+## Using OpenRouter Models
+
+Codex includes built-in support for [OpenRouter](https://openrouter.ai/), which provides access to a wide variety of AI models through a unified API. OpenRouter is particularly useful for accessing cutting-edge models and free-tier options.
+
+### Supported OpenRouter Models
+
+Codex has built-in support for these OpenRouter models with optimized context windows:
+
+- **`openai/gpt-5`** - 400k context, 180k output tokens
+- **`anthropic/claude-sonnet-4`** - 200k context, 64k output tokens
+- **`moonshotai/kimi-k2:free`** - 65.5k context, 65.5k output tokens (free tier)
+- **`qwen/qwen3-coder:free`** - 262k context, 262k output tokens (free tier)
+
+### Quick Start with OpenRouter
+
+1. **Get an API key** from [openrouter.ai/keys](https://openrouter.ai/keys)
+2. **Set your environment variable**:
+   ```bash
+   export OPENROUTER_API_KEY="your-api-key-here"
+   ```
+3. **Use OpenRouter models directly**:
+   ```bash
+   # Use GPT-5 via OpenRouter
+   codex --model "openai/gpt-5" --config model_provider=openrouter "explain this code"
+
+   # Use Claude Sonnet 4 via OpenRouter
+   codex --model "anthropic/claude-sonnet-4" --config model_provider=openrouter "review this code"
+
+   # Use free models
+   codex --model "qwen/qwen3-coder:free" --config model_provider=openrouter "write tests"
+   ```
+
+### OpenRouter Profiles
+
+Create profiles in `~/.codex/config.toml` for easy switching:
+
+```toml
+[profiles.gpt5]
+model_provider = "openrouter"
+model = "openai/gpt-5"
+approval_policy = "on-request"
+
+[profiles.claude4]
+model_provider = "openrouter"
+model = "anthropic/claude-sonnet-4"
+approval_policy = "on-request"
+
+[profiles.kimi]
+model_provider = "openrouter"
+model = "moonshotai/kimi-k2:free"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[profiles.qwen]
+model_provider = "openrouter"
+model = "qwen/qwen3-coder:free"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+```
+
+Then use with:
+```bash
+codex --profile gpt5 "complex reasoning task"
+codex --profile claude4 "code review and analysis"
+codex --profile kimi "quick questions"
+codex --profile qwen "code generation and refactoring"
+```
+
+### Advanced OpenRouter Configuration
+
+The OpenRouter provider is built-in, but you can customize it if needed:
+
+```toml
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+env_key_instructions = "Get your API key from https://openrouter.ai/keys"
+
+# Optional: Add headers for OpenRouter rankings
+env_http_headers = { "HTTP-Referer" = "OPENROUTER_REFERER", "X-Title" = "OPENROUTER_TITLE" }
 ```
 
 ---
