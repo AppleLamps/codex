@@ -10,7 +10,7 @@ Your capabilities:
 
 Within this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).
 
-# How you work
+## How you work
 
 ## Personality
 
@@ -61,7 +61,7 @@ Use a plan when:
 
 ### Examples
 
-**High-quality plans**
+### High-quality plans
 
 Example 1:
 
@@ -88,7 +88,7 @@ Example 3:
 5. Persist messages in lightweight DB
 6. Add typing indicators + unread count
 
-**Low-quality plans**
+### Low-quality plans
 
 Example 1:
 

@@ -41,6 +41,16 @@ const DEFAULT_TIMEOUT_MS: u64 = 10_000;
 const SIGKILL_CODE: i32 = 9;
 const TIMEOUT_CODE: i32 = 64;
 
+// Windows shell built-in commands that require cmd /c
+#[cfg(windows)]
+const WINDOWS_SHELL_BUILTINS: &[&str] = &[
+    "assoc", "break", "call", "cd", "chdir", "cls", "color", "copy", "date", "del", "dir",
+    "echo", "endlocal", "erase", "exit", "for", "ftype", "goto", "if", "md", "mkdir",
+    "mklink", "move", "path", "pause", "popd", "prompt", "pushd", "rd", "rem", "ren",
+    "rename", "rmdir", "set", "setlocal", "shift", "start", "time", "title", "type",
+    "ver", "verify", "vol", "where"
+];
+
 #[derive(Debug, Clone)]
 pub struct ExecParams {
     pub command: Vec<String>,
@@ -55,6 +65,35 @@ impl ExecParams {
     pub fn timeout_duration(&self) -> Duration {
         Duration::from_millis(self.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS))
     }
+}
+
+/// Detects if a command is a Windows shell built-in and prepends cmd /c if necessary
+#[cfg(windows)]
+fn prepare_windows_command(command: Vec<String>) -> Vec<String> {
+    if command.is_empty() {
+        return command;
+    }
+
+    let program = &command[0];
+
+    // Check if the command is a Windows shell built-in (case-insensitive)
+    let is_builtin = WINDOWS_SHELL_BUILTINS.iter()
+        .any(|&builtin| program.eq_ignore_ascii_case(builtin));
+
+    if is_builtin {
+        // Prepend cmd /c to the command
+        let mut new_command = vec!["cmd".to_string(), "/c".to_string()];
+        new_command.extend(command);
+        new_command
+    } else {
+        command
+    }
+}
+
+/// On non-Windows platforms, return the command as-is
+#[cfg(not(windows))]
+fn prepare_windows_command(command: Vec<String>) -> Vec<String> {
+    command
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -92,8 +131,10 @@ pub async fn process_exec_tool_call(
             let ExecParams {
                 command, cwd, env, ..
             } = params;
+            // Prepare the command for Windows shell built-ins if necessary
+            let prepared_command = prepare_windows_command(command);
             let child = spawn_command_under_seatbelt(
-                command,
+                prepared_command,
                 sandbox_policy,
                 cwd,
                 StdioPolicy::RedirectForShellTool,
@@ -108,12 +149,15 @@ pub async fn process_exec_tool_call(
                 command, cwd, env, ..
             } = params;
 
+            // Prepare the command for Windows shell built-ins if necessary
+            let prepared_command = prepare_windows_command(command);
+
             let codex_linux_sandbox_exe = codex_linux_sandbox_exe
                 .as_ref()
                 .ok_or(CodexErr::LandlockSandboxExecutableNotProvided)?;
             let child = spawn_command_under_linux_sandbox(
                 codex_linux_sandbox_exe,
-                command,
+                prepared_command,
                 sandbox_policy,
                 cwd,
                 StdioPolicy::RedirectForShellTool,
@@ -231,7 +275,10 @@ async fn exec(
         command, cwd, env, ..
     } = params;
 
-    let (program, args) = command.split_first().ok_or_else(|| {
+    // Prepare the command for Windows shell built-ins if necessary
+    let prepared_command = prepare_windows_command(command);
+
+    let (program, args) = prepared_command.split_first().ok_or_else(|| {
         CodexErr::Io(io::Error::new(
             io::ErrorKind::InvalidInput,
             "command args are empty",
@@ -396,4 +443,74 @@ fn synthetic_exit_status(code: i32) -> ExitStatus {
     use std::os::windows::process::ExitStatusExt;
     #[expect(clippy::unwrap_used)]
     std::process::ExitStatus::from_raw(code.try_into().unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn test_windows_shell_builtin_detection() {
+        // Test that Windows shell built-ins are detected and cmd /c is prepended
+        let command = vec!["dir".to_string(), "C:\\".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["cmd", "/c", "dir", "C:\\"]);
+
+        let command = vec!["del".to_string(), "file.txt".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["cmd", "/c", "del", "file.txt"]);
+
+        let command = vec!["echo".to_string(), "hello".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["cmd", "/c", "echo", "hello"]);
+
+        // Test case insensitive detection
+        let command = vec!["DIR".to_string(), "C:\\".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["cmd", "/c", "DIR", "C:\\"]);
+
+        let command = vec!["Echo".to_string(), "hello".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["cmd", "/c", "Echo", "hello"]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_windows_non_builtin_commands() {
+        // Test that non-built-in commands are not modified
+        let command = vec!["git".to_string(), "status".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["git", "status"]);
+
+        let command = vec!["python".to_string(), "script.py".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["python", "script.py"]);
+
+        let command = vec!["cargo".to_string(), "build".to_string()];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, vec!["cargo", "build"]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_windows_empty_command() {
+        // Test that empty commands are handled gracefully
+        let command = vec![];
+        let result = prepare_windows_command(command);
+        assert_eq!(result, Vec::<String>::new());
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_non_windows_command_passthrough() {
+        // Test that on non-Windows platforms, commands are passed through unchanged
+        let command = vec!["dir".to_string(), "/".to_string()];
+        let result = prepare_windows_command(command.clone());
+        assert_eq!(result, command);
+
+        let command = vec!["echo".to_string(), "hello".to_string()];
+        let result = prepare_windows_command(command.clone());
+        assert_eq!(result, command);
+    }
 }
