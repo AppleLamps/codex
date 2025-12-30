@@ -14,10 +14,20 @@ export async function GET(request: NextRequest) {
   }
 
   const manager = getSessionManager();
-  const session = manager.getSession(sessionId);
 
-  if (!session) {
-    return new Response('Session not found', { status: 404 });
+  // Wait for session to be ready (handles race condition with session creation)
+  let session;
+  try {
+    session = await manager.waitForReady(sessionId, 30000);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Session error';
+    if (message === 'Session not found') {
+      return new Response('Session not found', { status: 404 });
+    }
+    if (message === 'Session initialization timeout') {
+      return new Response('Session initialization timeout', { status: 408 });
+    }
+    return new Response(message, { status: 500 });
   }
 
   // Create a readable stream for SSE

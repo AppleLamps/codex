@@ -91,7 +91,7 @@ export function InputBox({
                 className={clsx(
                   'p-2 rounded-lg transition-colors',
                   input.trim() && !disabled
-                    ? 'bg-white text-black hover:bg-gray-100'
+                    ? 'bg-codex-accent text-codex-bg hover:opacity-80'
                     : 'bg-codex-border text-codex-muted cursor-not-allowed'
                 )}
                 title="Send message"

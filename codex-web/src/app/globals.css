@@ -3,11 +3,25 @@
 @tailwind utilities;
 
 :root {
+  /* Light mode (default) - ChatGPT inspired */
+  --codex-bg: #ffffff;
+  --codex-surface: #f7f7f8;
+  --codex-border: #e5e5e5;
+  --codex-text: #1a1a1a;
+  --codex-muted: #6b6b6b;
+  --codex-hover: #ececec;
+  --codex-accent: #000000;
+}
+
+.dark {
+  /* Dark mode */
   --codex-bg: #0a0a0a;
   --codex-surface: #141414;
   --codex-border: #262626;
   --codex-text: #fafafa;
   --codex-muted: #a1a1a1;
+  --codex-hover: #1f1f1f;
+  --codex-accent: #ffffff;
 }
 
 * {
@@ -44,7 +58,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #404040;
+  background: var(--codex-muted);
 }
 
 /* Code styling */
@@ -59,16 +73,25 @@ textarea {
 
 /* Selection styling */
 ::selection {
-  background-color: rgba(255, 255, 255, 0.2);
+  background-color: var(--codex-hover);
 }
 
 /* Focus visible styling */
 :focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline: 2px solid var(--codex-border);
   outline-offset: 2px;
 }
 
-/* Prose overrides for dark mode */
+/* Prose overrides for theming */
+.prose-themed {
+  --tw-prose-body: var(--codex-text);
+  --tw-prose-headings: var(--codex-text);
+  --tw-prose-links: var(--codex-text);
+  --tw-prose-code: var(--codex-text);
+  --tw-prose-pre-bg: var(--codex-surface);
+}
+
+/* Keep prose-invert for backwards compatibility */
 .prose-invert {
   --tw-prose-body: var(--codex-text);
   --tw-prose-headings: var(--codex-text);

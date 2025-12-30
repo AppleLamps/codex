@@ -1,8 +1,9 @@
 'use client';
 
-import { Plus, MessageSquare, Archive, Settings } from 'lucide-react';
+import { Plus, MessageSquare, Archive, Settings, Search, GitPullRequest } from 'lucide-react';
 import clsx from 'clsx';
 import type { Thread } from '@/types/codex';
+import { AuthStatus } from './AuthStatus';
 
 interface SidebarProps {
   threads: Thread[];
@@ -10,6 +11,13 @@ interface SidebarProps {
   onNewThread: () => void;
   onSelectThread: (threadId: string) => void;
   isConnected: boolean;
+  isAuthenticated?: boolean;
+  accountInfo?: { email?: string; name?: string; plan?: string } | null;
+  onLogin?: () => void;
+  onLogout?: () => void;
+  onOpenSettings?: () => void;
+  onOpenReview?: () => void;
+  onOpenSearch?: () => void;
 }
 
 export function Sidebar({
@@ -18,6 +26,13 @@ export function Sidebar({
   onNewThread,
   onSelectThread,
   isConnected,
+  isAuthenticated = false,
+  accountInfo = null,
+  onLogin,
+  onLogout,
+  onOpenSettings,
+  onOpenReview,
+  onOpenSearch,
 }: SidebarProps) {
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
@@ -41,8 +56,8 @@ export function Sidebar({
       {/* Header */}
       <div className="p-4 border-b border-codex-border">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 bg-white rounded flex items-center justify-center">
-            <span className="text-black font-bold text-sm">CX</span>
+          <div className="w-8 h-8 bg-codex-accent rounded flex items-center justify-center">
+            <span className="text-codex-bg font-bold text-sm">CX</span>
           </div>
           <span className="font-semibold text-codex-text">CODEX</span>
           <div
@@ -55,12 +70,49 @@ export function Sidebar({
         </div>
         <button
           onClick={onNewThread}
-          disabled={!isConnected}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white text-black rounded-lg font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!isConnected || !isAuthenticated}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-codex-accent text-codex-bg rounded-lg font-medium hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus size={18} />
           New Session
         </button>
+      </div>
+
+      {/* Auth Status */}
+      {onLogin && onLogout && (
+        <div className="border-b border-codex-border">
+          <AuthStatus
+            isAuthenticated={isAuthenticated}
+            accountInfo={accountInfo}
+            onLogin={onLogin}
+            onLogout={onLogout}
+          />
+        </div>
+      )}
+
+      {/* Quick Actions */}
+      <div className="p-2 border-b border-codex-border space-y-1">
+        {onOpenSearch && (
+          <button
+            onClick={onOpenSearch}
+            disabled={!isConnected}
+            className="w-full flex items-center gap-2 px-2 py-2 text-codex-muted hover:text-codex-text hover:bg-codex-hover rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Search size={16} />
+            <span className="text-sm">Search Files</span>
+            <span className="ml-auto text-xs text-codex-muted">Ctrl+P</span>
+          </button>
+        )}
+        {onOpenReview && (
+          <button
+            onClick={onOpenReview}
+            disabled={!isConnected || !isAuthenticated}
+            className="w-full flex items-center gap-2 px-2 py-2 text-codex-muted hover:text-codex-text hover:bg-codex-hover rounded-lg transition-colors disabled:opacity-50"
+          >
+            <GitPullRequest size={16} />
+            <span className="text-sm">Code Review</span>
+          </button>
+        )}
       </div>
 
       {/* Sessions List */}
@@ -109,7 +161,10 @@ export function Sidebar({
           <Archive size={16} />
           <span className="text-sm">Archived</span>
         </button>
-        <button className="w-full flex items-center gap-2 px-2 py-2 text-codex-muted hover:text-codex-text hover:bg-codex-hover rounded-lg transition-colors">
+        <button
+          onClick={onOpenSettings}
+          className="w-full flex items-center gap-2 px-2 py-2 text-codex-muted hover:text-codex-text hover:bg-codex-hover rounded-lg transition-colors"
+        >
           <Settings size={16} />
           <span className="text-sm">Settings</span>
         </button>

@@ -4,17 +4,32 @@ import { getSessionManager } from '@/lib/session-manager';
 
 /**
  * POST /api/codex/session
- * Create a new session and start the codex bridge
+ * Create a new session or resume an existing one
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const sessionId = uuidv4();
+    // Parse optional sessionId from body
+    const body = await request.json().catch(() => ({}));
+    const existingSessionId = body.sessionId;
+
     const manager = getSessionManager();
 
+    // If sessionId provided and session exists, reuse it
+    if (existingSessionId && manager.hasSession(existingSessionId)) {
+      return NextResponse.json({
+        sessionId: existingSessionId,
+        reused: true,
+        message: 'Session resumed successfully'
+      });
+    }
+
+    // Create new session
+    const sessionId = uuidv4();
     await manager.createSession(sessionId);
 
     return NextResponse.json({
       sessionId,
+      reused: false,
       message: 'Session created successfully'
     });
   } catch (error) {

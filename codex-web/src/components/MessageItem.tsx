@@ -50,8 +50,8 @@ export function MessageItem({ item }: MessageItemProps) {
     case 'agentMessage':
       return (
         <div className="flex gap-3 px-4 py-3 bg-codex-surface">
-          <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center flex-shrink-0">
-            <Bot size={16} className="text-black" />
+          <div className="w-8 h-8 bg-codex-accent rounded-full flex items-center justify-center flex-shrink-0">
+            <Bot size={16} className="text-codex-bg" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-codex-text mb-1">Codex</p>
@@ -200,7 +200,7 @@ export function MessageItem({ item }: MessageItemProps) {
                       : 'border-codex-border'
                   )}
                 >
-                  {todo.completed && <CheckCircle size={12} className="text-black" />}
+                  {todo.completed && <CheckCircle size={12} className="text-white" />}
                 </span>
                 <span className={clsx(todo.completed && 'line-through text-codex-muted')}>
                   {todo.text}

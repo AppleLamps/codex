@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Thread, Turn, ThreadItem, CodexEvent } from '@/types/codex';
 
+const CODEX_SESSION_KEY = 'codex-session-id';
+
 interface UseCodexState {
   sessionId: string | null;
   thread: Thread | null;
@@ -14,10 +16,15 @@ interface UseCodexState {
   error: string | null;
 }
 
+interface StartThreadOptions {
+  cwd?: string;
+  model?: string;
+}
+
 interface UseCodexReturn extends UseCodexState {
   connect: () => Promise<void>;
-  disconnect: () => void;
-  startThread: (cwd?: string) => Promise<void>;
+  disconnect: (clearSession?: boolean) => void;
+  startThread: (options?: StartThreadOptions) => Promise<void>;
   resumeThread: (threadId: string) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   interruptTurn: () => Promise<void>;
@@ -44,11 +51,32 @@ export function useCodex(): UseCodexReturn {
     try {
       setState(s => ({ ...s, isLoading: true, error: null }));
 
-      // Create session
-      const response = await fetch('/api/codex/session', { method: 'POST' });
-      const { sessionId, error } = await response.json();
+      // Check localStorage for existing session
+      const existingSessionId = typeof window !== 'undefined'
+        ? localStorage.getItem(CODEX_SESSION_KEY)
+        : null;
 
-      if (error) throw new Error(error);
+      // Create/resume session - send existing sessionId if available
+      const response = await fetch('/api/codex/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: existingSessionId }),
+      });
+      const { sessionId, reused, error } = await response.json();
+
+      if (error) {
+        // If session resume failed, clear localStorage and retry with new session
+        if (existingSessionId) {
+          localStorage.removeItem(CODEX_SESSION_KEY);
+          return connect(); // Retry with fresh session
+        }
+        throw new Error(error);
+      }
+
+      // Store sessionId in localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(CODEX_SESSION_KEY, sessionId);
+      }
 
       // Connect to SSE
       const es = new EventSource(`/api/codex/events?sessionId=${sessionId}`);
@@ -141,14 +169,21 @@ export function useCodex(): UseCodexReturn {
   }, []);
 
   // Disconnect and cleanup
-  const disconnect = useCallback(() => {
+  // clearSession: if true, clears localStorage (use for explicit logout)
+  const disconnect = useCallback((clearSession: boolean = false) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
-    if (state.sessionId) {
+    if (state.sessionId && clearSession) {
+      // Only delete server session on explicit logout
       fetch(`/api/codex/session?sessionId=${state.sessionId}`, { method: 'DELETE' });
+    }
+
+    // Clear localStorage if explicitly disconnecting (logout)
+    if (clearSession && typeof window !== 'undefined') {
+      localStorage.removeItem(CODEX_SESSION_KEY);
     }
 
     setState({
@@ -165,7 +200,7 @@ export function useCodex(): UseCodexReturn {
   }, [state.sessionId]);
 
   // Start a new thread
-  const startThread = useCallback(async (cwd?: string) => {
+  const startThread = useCallback(async (options?: StartThreadOptions) => {
     if (!state.sessionId) return;
 
     try {
@@ -175,7 +210,11 @@ export function useCodex(): UseCodexReturn {
       const response = await fetch('/api/codex/thread', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: state.sessionId, cwd }),
+        body: JSON.stringify({
+          sessionId: state.sessionId,
+          cwd: options?.cwd,
+          model: options?.model,
+        }),
       });
 
       const { error } = await response.json();

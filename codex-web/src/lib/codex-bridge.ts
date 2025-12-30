@@ -116,12 +116,12 @@ export class CodexBridge extends EventEmitter {
   /**
    * Send a JSON-RPC request and wait for response
    */
-  private request(method: string, params?: Record<string, unknown>): Promise<unknown> {
+  private request(method: string, params?: object): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const id = ++this.requestId;
       const request: JsonRpcRequest = { method, id };
       if (params) {
-        request.params = params;
+        request.params = params as Record<string, unknown>;
       }
 
       this.pendingRequests.set(id, { resolve, reject });
@@ -303,6 +303,176 @@ export class CodexBridge extends EventEmitter {
       throw new Error('CodexBridge not initialized');
     }
     return await this.request('model/list', {});
+  }
+
+  /**
+   * Set default model
+   */
+  async setDefaultModel(model: string): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    await this.request('setDefaultModel', { model });
+  }
+
+  /**
+   * Get authentication status
+   */
+  async getAuthStatus(): Promise<{ status: string; account?: unknown }> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('getAuthStatus', {}) as { status: string; account?: unknown };
+  }
+
+  /**
+   * Login with API key
+   */
+  async loginApiKey(apiKey: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    try {
+      await this.request('loginApiKey', { apiKey });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : 'Login failed' };
+    }
+  }
+
+  /**
+   * Start device auth login flow
+   */
+  async loginDevice(): Promise<{ userCode: string; verificationUri: string; expiresIn: number }> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    const result = await this.request('loginChatGpt', {}) as Record<string, unknown>;
+    // Handle both camelCase and snake_case response formats
+    return {
+      userCode: (result.userCode || result.user_code || '') as string,
+      verificationUri: (result.verificationUri || result.verification_uri || '') as string,
+      expiresIn: (result.expiresIn || result.expires_in || 0) as number,
+    };
+  }
+
+  /**
+   * Cancel ongoing device auth login
+   */
+  async cancelLoginDevice(): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    await this.request('cancelLoginChatGpt', {});
+  }
+
+  /**
+   * Logout
+   */
+  async logout(): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    await this.request('account/logout', {});
+  }
+
+  /**
+   * Read configuration
+   */
+  async readConfig(key?: string): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    const params = key ? { key } : {};
+    return await this.request('config/read', params);
+  }
+
+  /**
+   * Write configuration
+   */
+  async writeConfig(key: string, value: unknown): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    await this.request('config/value/write', { key, value });
+  }
+
+  /**
+   * List available skills
+   */
+  async listSkills(): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('skills/list', {});
+  }
+
+  /**
+   * Start a code review
+   */
+  async startReview(params: {
+    target: 'uncommitted' | 'base' | 'commit' | 'custom';
+    baseBranch?: string;
+    commitSha?: string;
+    instructions?: string;
+  }): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('review/start', params);
+  }
+
+  /**
+   * Get MCP server status
+   */
+  async getMcpServerStatus(): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('mcpServerStatus/list', {});
+  }
+
+  /**
+   * Fuzzy file search
+   */
+  async fuzzyFileSearch(query: string, limit?: number): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    const params: Record<string, unknown> = { query };
+    if (limit) params.limit = limit;
+    return await this.request('fuzzyFileSearch', params);
+  }
+
+  /**
+   * Get git diff to remote
+   */
+  async gitDiffToRemote(branch?: string): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    const params = branch ? { branch } : {};
+    return await this.request('gitDiffToRemote', params);
+  }
+
+  /**
+   * Get user info
+   */
+  async getUserInfo(): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('userInfo', {});
+  }
+
+  /**
+   * Upload feedback
+   */
+  async uploadFeedback(feedback: { type: string; message: string; includeLogs?: boolean }): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    await this.request('feedback/upload', feedback);
   }
 
   /**

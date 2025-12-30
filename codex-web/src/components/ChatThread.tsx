@@ -26,8 +26,8 @@ export function ChatThread({ items, turn, isLoading }: ChatThreadProps) {
       {items.length === 0 && !isLoading ? (
         <div className="h-full flex items-center justify-center">
           <div className="text-center max-w-md px-4">
-            <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-black font-bold text-2xl">CX</span>
+            <div className="w-16 h-16 bg-codex-accent rounded-xl flex items-center justify-center mx-auto mb-4">
+              <span className="text-codex-bg font-bold text-2xl">CX</span>
             </div>
             <h2 className="text-xl font-semibold text-codex-text mb-2">
               Welcome to Codex

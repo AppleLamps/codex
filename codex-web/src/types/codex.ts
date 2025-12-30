@@ -178,7 +178,10 @@ export type CodexEvent =
   | { type: 'item/agentMessage/delta'; itemId: string; delta: string }
   | { type: 'item/commandExecution/outputDelta'; itemId: string; delta: string }
   | { type: 'item/reasoning/summaryTextDelta'; itemId: string; delta: string }
-  | { type: 'error'; error: TurnError };
+  | { type: 'error'; error: TurnError }
+  | { type: 'connected' }
+  | { type: 'exit'; code: number | null; signal: string | null }
+  | { type: 'account/updated'; account: unknown };
 
 // WebSocket message from client to server
 export interface WsClientMessage {

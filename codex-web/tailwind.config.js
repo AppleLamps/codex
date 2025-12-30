@@ -9,13 +9,14 @@ module.exports = {
     extend: {
       colors: {
         codex: {
-          bg: '#0a0a0a',
-          surface: '#141414',
-          border: '#262626',
-          text: '#fafafa',
-          muted: '#a1a1a1',
-          accent: '#ffffff',
-          hover: '#1f1f1f',
+          bg: 'var(--codex-bg)',
+          surface: 'var(--codex-surface)',
+          border: 'var(--codex-border)',
+          text: 'var(--codex-text)',
+          muted: 'var(--codex-muted)',
+          accent: 'var(--codex-accent)',
+          hover: 'var(--codex-hover)',
+          // Semantic colors stay static
           success: '#22c55e',
           error: '#ef4444',
           warning: '#f59e0b',
