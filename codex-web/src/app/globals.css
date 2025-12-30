@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --codex-bg: #0a0a0a;
+  --codex-surface: #141414;
+  --codex-border: #262626;
+  --codex-text: #fafafa;
+  --codex-muted: #a1a1a1;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  background-color: var(--codex-bg);
+  color: var(--codex-text);
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--codex-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--codex-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Code styling */
+pre, code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+/* Textarea styling */
+textarea {
+  font-family: inherit;
+}
+
+/* Selection styling */
+::selection {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Focus visible styling */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
+}
+
+/* Prose overrides for dark mode */
+.prose-invert {
+  --tw-prose-body: var(--codex-text);
+  --tw-prose-headings: var(--codex-text);
+  --tw-prose-links: var(--codex-text);
+  --tw-prose-code: var(--codex-text);
+  --tw-prose-pre-bg: var(--codex-surface);
+}
+
+/* Animation for loading states */
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: var(--codex-border);
+  }
+  50% {
+    border-color: var(--codex-text);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s ease-in-out infinite;
+}
