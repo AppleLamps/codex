@@ -76,3 +76,30 @@ export async function PUT(request: NextRequest) {
     );
   }
 }
+
+/**
+ * DELETE /api/codex/thread
+ * Archive a thread
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const sessionId = searchParams.get('sessionId');
+    const threadId = searchParams.get('threadId');
+
+    if (!sessionId || !threadId) {
+      return NextResponse.json({ error: 'sessionId and threadId required' }, { status: 400 });
+    }
+
+    const manager = getSessionManager();
+    await manager.archiveThread(sessionId, threadId);
+
+    return NextResponse.json({ message: 'Thread archived successfully' });
+  } catch (error) {
+    console.error('[API] Failed to archive thread:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to archive thread' },
+      { status: 500 }
+    );
+  }
+}

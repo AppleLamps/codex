@@ -1,18 +1,20 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MessageItem } from './MessageItem';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ListTodo, ChevronDown, ChevronRight } from 'lucide-react';
 import type { ThreadItem, Turn } from '@/types/codex';
 
 interface ChatThreadProps {
   items: ThreadItem[];
   turn: Turn | null;
   isLoading: boolean;
+  plan?: string[] | null;
 }
 
-export function ChatThread({ items, turn, isLoading }: ChatThreadProps) {
+export function ChatThread({ items, turn, isLoading, plan }: ChatThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [planExpanded, setPlanExpanded] = useState(true);
 
   // Auto-scroll to bottom when new items arrive
   useEffect(() => {
@@ -42,6 +44,30 @@ export function ChatThread({ items, turn, isLoading }: ChatThreadProps) {
           {items.map((item) => (
             <MessageItem key={item.id} item={item} />
           ))}
+        </div>
+      )}
+
+      {/* Plan visualization */}
+      {plan && plan.length > 0 && isProcessing && (
+        <div className="px-4 py-2 border-t border-codex-border">
+          <button
+            onClick={() => setPlanExpanded(!planExpanded)}
+            className="flex items-center gap-2 text-codex-muted hover:text-codex-text transition-colors w-full"
+          >
+            {planExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <ListTodo size={14} />
+            <span className="text-xs font-medium">Current Plan ({plan.length} steps)</span>
+          </button>
+          {planExpanded && (
+            <div className="mt-2 ml-6 space-y-1">
+              {plan.map((step, index) => (
+                <div key={index} className="flex items-start gap-2 text-sm">
+                  <span className="text-codex-muted font-mono text-xs w-4">{index + 1}.</span>
+                  <span className="text-codex-text">{step}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

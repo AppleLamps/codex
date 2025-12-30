@@ -476,6 +476,36 @@ export class CodexBridge extends EventEmitter {
   }
 
   /**
+   * Get rate limits
+   */
+  async getRateLimits(): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('account/rateLimits/read', {});
+  }
+
+  /**
+   * Start MCP OAuth login
+   */
+  async mcpOAuthLogin(serverName: string): Promise<unknown> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    return await this.request('mcpServer/oauth/login', { serverName });
+  }
+
+  /**
+   * Respond to approval request
+   */
+  async respondToApproval(itemId: string, approved: boolean): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('CodexBridge not initialized');
+    }
+    await this.request('item/approval/respond', { itemId, approved });
+  }
+
+  /**
    * Clean up resources
    */
   private cleanup(): void {
