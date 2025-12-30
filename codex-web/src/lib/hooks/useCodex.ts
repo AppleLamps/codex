@@ -82,7 +82,10 @@ export function useCodex(): UseCodexReturn {
       const es = new EventSource(`/api/codex/events?sessionId=${sessionId}`);
 
       es.onopen = () => {
-        setState(s => ({ ...s, sessionId, isConnected: true, isLoading: false }));
+        // Note: We don't set isConnected here anymore.
+        // Wait for the 'connected' event from the server to ensure
+        // the session is fully ready before making API calls.
+        setState(s => ({ ...s, sessionId, isLoading: false }));
       };
 
       es.onerror = () => {
@@ -112,7 +115,8 @@ export function useCodex(): UseCodexReturn {
   const handleEvent = useCallback((event: CodexEvent & { type: string }) => {
     switch (event.type) {
       case 'connected':
-        // Initial connection confirmation
+        // Initial connection confirmation from server - session is now ready
+        setState(s => ({ ...s, isConnected: true }));
         break;
 
       case 'thread/started':
