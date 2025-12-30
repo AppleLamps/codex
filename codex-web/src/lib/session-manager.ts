@@ -273,6 +273,20 @@ class SessionManager {
   }
 
   /**
+   * Archive a thread
+   */
+  async archiveThread(sessionId: string, threadId: string): Promise<void> {
+    const session = await this.getSessionReady(sessionId);
+    await session.bridge.archiveThread(threadId);
+    // Clear current thread if it was archived
+    if (session.currentThread?.id === threadId) {
+      session.currentThread = null;
+      session.currentTurn = null;
+      session.items.clear();
+    }
+  }
+
+  /**
    * Delete a session
    */
   deleteSession(sessionId: string): void {
@@ -423,6 +437,30 @@ class SessionManager {
   async uploadFeedback(sessionId: string, feedback: { type: string; message: string; includeLogs?: boolean }): Promise<void> {
     const session = await this.getSessionReady(sessionId);
     await session.bridge.uploadFeedback(feedback);
+  }
+
+  /**
+   * Get rate limits
+   */
+  async getRateLimits(sessionId: string): Promise<unknown> {
+    const session = await this.getSessionReady(sessionId);
+    return await session.bridge.getRateLimits();
+  }
+
+  /**
+   * Start MCP OAuth login
+   */
+  async mcpOAuthLogin(sessionId: string, serverName: string): Promise<unknown> {
+    const session = await this.getSessionReady(sessionId);
+    return await session.bridge.mcpOAuthLogin(serverName);
+  }
+
+  /**
+   * Respond to approval request
+   */
+  async respondToApproval(sessionId: string, itemId: string, approved: boolean): Promise<void> {
+    const session = await this.getSessionReady(sessionId);
+    await session.bridge.respondToApproval(itemId, approved);
   }
 
   /**

@@ -1,6 +1,7 @@
 'use client';
 
-import { Plus, MessageSquare, Archive, Settings, Search, GitPullRequest } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, MessageSquare, Archive, Settings, Search, GitPullRequest, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { Thread } from '@/types/codex';
 import { AuthStatus } from './AuthStatus';
@@ -10,6 +11,7 @@ interface SidebarProps {
   currentThreadId: string | null;
   onNewThread: () => void;
   onSelectThread: (threadId: string) => void;
+  onArchiveThread?: (threadId: string) => void;
   isConnected: boolean;
   isAuthenticated?: boolean;
   accountInfo?: { email?: string; name?: string; plan?: string } | null;
@@ -25,6 +27,7 @@ export function Sidebar({
   currentThreadId,
   onNewThread,
   onSelectThread,
+  onArchiveThread,
   isConnected,
   isAuthenticated = false,
   accountInfo = null,
@@ -34,6 +37,18 @@ export function Sidebar({
   onOpenReview,
   onOpenSearch,
 }: SidebarProps) {
+  const [confirmArchive, setConfirmArchive] = useState<string | null>(null);
+
+  const handleArchive = (threadId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirmArchive === threadId) {
+      onArchiveThread?.(threadId);
+      setConfirmArchive(null);
+    } else {
+      setConfirmArchive(threadId);
+    }
+  };
+
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
     const now = new Date();
@@ -128,7 +143,7 @@ export function Sidebar({
           ) : (
             <ul className="space-y-1">
               {threads.map((thread) => (
-                <li key={thread.id}>
+                <li key={thread.id} className="group relative">
                   <button
                     onClick={() => onSelectThread(thread.id)}
                     className={clsx(
@@ -148,6 +163,36 @@ export function Sidebar({
                       </p>
                     </div>
                   </button>
+                  {onArchiveThread && (
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {confirmArchive === thread.id ? (
+                        <div className="flex items-center gap-1 bg-codex-surface rounded px-1">
+                          <button
+                            onClick={(e) => handleArchive(thread.id, e)}
+                            className="p-1 text-codex-error hover:bg-codex-error/20 rounded"
+                            title="Confirm archive"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setConfirmArchive(null); }}
+                            className="p-1 text-codex-muted hover:bg-codex-hover rounded"
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => handleArchive(thread.id, e)}
+                          className="p-1 text-codex-muted hover:text-codex-error hover:bg-codex-hover rounded"
+                          title="Archive thread"
+                        >
+                          <Archive size={14} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

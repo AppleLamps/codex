@@ -3,21 +3,15 @@
 import { AlertTriangle, Check, X, Terminal, FileEdit, Globe } from 'lucide-react';
 
 interface ApprovalRequest {
-  id: string;
-  type: 'command' | 'fileWrite' | 'fileDelete' | 'network' | 'other';
-  title: string;
-  description?: string;
-  details?: {
-    command?: string;
-    filePath?: string;
-    url?: string;
-  };
+  itemId: string;
+  type: 'commandExecution' | 'fileChange';
+  description: string;
 }
 
 interface ApprovalDialogProps {
   request: ApprovalRequest | null;
-  onApprove: (id: string) => void;
-  onDeny: (id: string) => void;
+  onApprove: () => void;
+  onDeny: () => void;
 }
 
 export function ApprovalDialog({ request, onApprove, onDeny }: ApprovalDialogProps) {
@@ -25,15 +19,23 @@ export function ApprovalDialog({ request, onApprove, onDeny }: ApprovalDialogPro
 
   const getIcon = () => {
     switch (request.type) {
-      case 'command':
+      case 'commandExecution':
         return <Terminal size={24} className="text-codex-warning" />;
-      case 'fileWrite':
-      case 'fileDelete':
+      case 'fileChange':
         return <FileEdit size={24} className="text-codex-warning" />;
-      case 'network':
-        return <Globe size={24} className="text-codex-warning" />;
       default:
         return <AlertTriangle size={24} className="text-codex-warning" />;
+    }
+  };
+
+  const getTitle = () => {
+    switch (request.type) {
+      case 'commandExecution':
+        return 'Command Execution';
+      case 'fileChange':
+        return 'File Changes';
+      default:
+        return 'Action Required';
     }
   };
 
@@ -45,55 +47,38 @@ export function ApprovalDialog({ request, onApprove, onDeny }: ApprovalDialogPro
           {getIcon()}
           <div>
             <h2 className="text-lg font-semibold text-codex-text">Approval Required</h2>
-            <p className="text-sm text-codex-muted">{request.title}</p>
+            <p className="text-sm text-codex-muted">{getTitle()}</p>
           </div>
         </div>
 
         {/* Content */}
         <div className="p-4">
-          {request.description && (
-            <p className="text-sm text-codex-text mb-4">{request.description}</p>
-          )}
-
-          {request.details?.command && (
-            <div className="mb-4">
-              <p className="text-xs font-medium text-codex-muted mb-1">Command</p>
-              <pre className="p-3 bg-codex-bg rounded-lg text-sm text-codex-text overflow-x-auto font-mono">
-                {request.details.command}
-              </pre>
-            </div>
-          )}
-
-          {request.details?.filePath && (
-            <div className="mb-4">
-              <p className="text-xs font-medium text-codex-muted mb-1">File Path</p>
-              <p className="p-3 bg-codex-bg rounded-lg text-sm text-codex-text font-mono break-all">
-                {request.details.filePath}
-              </p>
-            </div>
-          )}
-
-          {request.details?.url && (
-            <div className="mb-4">
-              <p className="text-xs font-medium text-codex-muted mb-1">URL</p>
-              <p className="p-3 bg-codex-bg rounded-lg text-sm text-codex-text font-mono break-all">
-                {request.details.url}
-              </p>
-            </div>
-          )}
+          <div className="mb-4">
+            <p className="text-xs font-medium text-codex-muted mb-1">
+              {request.type === 'commandExecution' ? 'Command' : 'Files'}
+            </p>
+            <pre className="p-3 bg-codex-bg rounded-lg text-sm text-codex-text overflow-x-auto font-mono whitespace-pre-wrap break-all">
+              {request.description}
+            </pre>
+          </div>
+          <p className="text-sm text-codex-muted">
+            {request.type === 'commandExecution'
+              ? 'Do you want to allow this command to be executed?'
+              : 'Do you want to allow these file changes?'}
+          </p>
         </div>
 
         {/* Actions */}
         <div className="flex gap-2 p-4 border-t border-codex-border">
           <button
-            onClick={() => onDeny(request.id)}
+            onClick={onDeny}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-codex-error text-codex-error rounded-lg hover:bg-codex-error/10 transition-colors"
           >
             <X size={16} />
             Deny
           </button>
           <button
-            onClick={() => onApprove(request.id)}
+            onClick={onApprove}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-codex-success text-white rounded-lg hover:bg-codex-success/80 transition-colors"
           >
             <Check size={16} />

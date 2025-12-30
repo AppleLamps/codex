@@ -9,9 +9,10 @@ import { SettingsPanel } from '@/components/SettingsPanel';
 import { FileSearchDialog } from '@/components/FileSearchDialog';
 import { ReviewDialog } from '@/components/ReviewDialog';
 import { ModelSelector } from '@/components/ModelSelector';
+import { ApprovalDialog } from '@/components/ApprovalDialog';
 import { useCodex } from '@/lib/hooks/useCodex';
 import { useTheme } from '@/lib/theme-context';
-import { AlertCircle, RefreshCw, Sun, Moon } from 'lucide-react';
+import { AlertCircle, RefreshCw, Sun, Moon, Coins } from 'lucide-react';
 
 interface Model {
   id: string;
@@ -29,13 +30,18 @@ export default function Home() {
     isConnected,
     isLoading,
     error,
+    pendingApproval,
+    tokenUsage,
+    plan,
     connect,
     disconnect,
     startThread,
     resumeThread,
+    archiveThread,
     sendMessage,
     interruptTurn,
     loadThreads,
+    respondToApproval,
   } = useCodex();
 
   // UI state
@@ -248,6 +254,7 @@ export default function Home() {
         currentThreadId={thread?.id || null}
         onNewThread={handleNewThread}
         onSelectThread={handleSelectThread}
+        onArchiveThread={archiveThread}
         isConnected={isConnected}
         isAuthenticated={isAuthenticated}
         accountInfo={accountInfo}
@@ -273,6 +280,13 @@ export default function Home() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Token Usage */}
+            {tokenUsage && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-codex-surface border border-codex-border rounded-lg text-xs text-codex-muted">
+                <Coins size={12} />
+                <span>{tokenUsage.totalTokens.toLocaleString()} tokens</span>
+              </div>
+            )}
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -332,7 +346,7 @@ export default function Home() {
         )}
 
         {/* Chat thread */}
-        <ChatThread items={items} turn={turn} isLoading={isLoading} />
+        <ChatThread items={items} turn={turn} isLoading={isLoading} plan={plan} />
 
         {/* Input box */}
         <InputBox
@@ -380,6 +394,12 @@ export default function Home() {
         isOpen={showReview}
         onClose={() => setShowReview(false)}
         onStartReview={handleStartReview}
+      />
+
+      <ApprovalDialog
+        request={pendingApproval}
+        onApprove={() => respondToApproval(true)}
+        onDeny={() => respondToApproval(false)}
       />
     </main>
   );

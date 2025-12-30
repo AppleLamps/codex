@@ -5,6 +5,18 @@ import type { Thread, Turn, ThreadItem, CodexEvent } from '@/types/codex';
 
 const CODEX_SESSION_KEY = 'codex-session-id';
 
+interface ApprovalRequest {
+  itemId: string;
+  type: 'commandExecution' | 'fileChange';
+  description: string;
+}
+
+interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 interface UseCodexState {
   sessionId: string | null;
   thread: Thread | null;
@@ -14,6 +26,9 @@ interface UseCodexState {
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
+  pendingApproval: ApprovalRequest | null;
+  tokenUsage: TokenUsage | null;
+  plan: string[] | null;
 }
 
 interface StartThreadOptions {
@@ -26,9 +41,11 @@ interface UseCodexReturn extends UseCodexState {
   disconnect: (clearSession?: boolean) => void;
   startThread: (options?: StartThreadOptions) => Promise<void>;
   resumeThread: (threadId: string) => Promise<void>;
+  archiveThread: (threadId: string) => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   interruptTurn: () => Promise<void>;
   loadThreads: () => Promise<void>;
+  respondToApproval: (approved: boolean) => Promise<void>;
 }
 
 export function useCodex(): UseCodexReturn {
@@ -41,6 +58,9 @@ export function useCodex(): UseCodexReturn {
     isConnected: false,
     isLoading: false,
     error: null,
+    pendingApproval: null,
+    tokenUsage: null,
+    plan: null,
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -162,6 +182,51 @@ export function useCodex(): UseCodexReturn {
         break;
       }
 
+      case 'item/commandExecution/requestApproval': {
+        const { itemId, command } = event as { itemId: string; command: string };
+        setState(s => ({
+          ...s,
+          pendingApproval: {
+            itemId,
+            type: 'commandExecution',
+            description: command,
+          },
+        }));
+        break;
+      }
+
+      case 'item/fileChange/requestApproval': {
+        const { itemId, changes } = event as { itemId: string; changes: { path: string }[] };
+        setState(s => ({
+          ...s,
+          pendingApproval: {
+            itemId,
+            type: 'fileChange',
+            description: `${changes.length} file(s): ${changes.map(c => c.path).join(', ')}`,
+          },
+        }));
+        break;
+      }
+
+      case 'thread/tokenUsage/updated': {
+        const { inputTokens, outputTokens, totalTokens } = event as {
+          inputTokens: number;
+          outputTokens: number;
+          totalTokens: number;
+        };
+        setState(s => ({
+          ...s,
+          tokenUsage: { inputTokens, outputTokens, totalTokens },
+        }));
+        break;
+      }
+
+      case 'turn/plan/updated': {
+        const { plan } = event as { plan: string[] };
+        setState(s => ({ ...s, plan }));
+        break;
+      }
+
       case 'error':
         setState(s => ({ ...s, error: (event as { error: { message: string } }).error.message }));
         break;
@@ -199,6 +264,9 @@ export function useCodex(): UseCodexReturn {
       isConnected: false,
       isLoading: false,
       error: null,
+      pendingApproval: null,
+      tokenUsage: null,
+      plan: null,
     });
     itemsMapRef.current.clear();
   }, [state.sessionId]);
@@ -322,6 +390,54 @@ export function useCodex(): UseCodexReturn {
     }
   }, [state.sessionId]);
 
+  // Archive a thread
+  const archiveThread = useCallback(async (threadId: string) => {
+    if (!state.sessionId) return;
+
+    try {
+      const response = await fetch(
+        `/api/codex/thread?sessionId=${state.sessionId}&threadId=${threadId}`,
+        { method: 'DELETE' }
+      );
+      const { error } = await response.json();
+      if (error) throw new Error(error);
+
+      // Remove from threads list and clear if it was current
+      setState(s => ({
+        ...s,
+        threads: s.threads.filter(t => t.id !== threadId),
+        thread: s.thread?.id === threadId ? null : s.thread,
+        items: s.thread?.id === threadId ? [] : s.items,
+      }));
+    } catch (err) {
+      console.error('[useCodex] Failed to archive thread:', err);
+    }
+  }, [state.sessionId]);
+
+  // Respond to approval request
+  const respondToApproval = useCallback(async (approved: boolean) => {
+    if (!state.sessionId || !state.pendingApproval) return;
+
+    try {
+      const response = await fetch('/api/codex/approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: state.sessionId,
+          itemId: state.pendingApproval.itemId,
+          approved,
+        }),
+      });
+      const { error } = await response.json();
+      if (error) throw new Error(error);
+
+      // Clear pending approval
+      setState(s => ({ ...s, pendingApproval: null }));
+    } catch (err) {
+      console.error('[useCodex] Failed to respond to approval:', err);
+    }
+  }, [state.sessionId, state.pendingApproval]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -337,8 +453,10 @@ export function useCodex(): UseCodexReturn {
     disconnect,
     startThread,
     resumeThread,
+    archiveThread,
     sendMessage,
     interruptTurn,
     loadThreads,
+    respondToApproval,
   };
 }
